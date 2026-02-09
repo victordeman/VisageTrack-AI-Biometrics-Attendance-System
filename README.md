@@ -56,7 +56,7 @@ cd Face-Capture-System
 
 ## Step-by-Step Integration Process
 
-### 1. Clone the Repository Locally (If Not Already Done):
+### 2. Clone the Repository Locally (If Not Already Done):
 
 Navigate to your project folder: cd path/to/Face-Capture-System.
 If not cloned: git clone https://github.com/victordeman/Face-Capture-System.git.

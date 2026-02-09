@@ -53,7 +53,7 @@ Perfect for educational institutions, small offices, or research projects — es
 ```bash
 git clone https://github.com/victordeman/Face-Capture-System.git
 cd Face-Capture-System
-
+```
 ## Step-by-Step Integration Process
 
 ### 2. Clone the Repository Locally (If Not Already Done):

@@ -71,3 +71,51 @@ face_recognition: For embeddings (installs dlib automatically).
 opencv-python: For image processing.
 cryptography: For encryption.
 ```
+
+Create requirements.txt: pip freeze > requirements.txt (add to repo for deployment).
+
+### 1. Create Backend Files:
+
+```
+In the root folder, create app.py (main Flask app).
+Create a database.db file (SQLite will generate it).
+Update frontend JS (script.js) to send requests to backend APIs (e.g., /api/enroll, /api/recognize).
+Add liveness detection logic (basic motion check) in backend.
+
+Implement the Backend Code:
+Copy the code below into the respective files.
+This backend serves the index.html as the root, handles APIs, and records attendance with your face.
+
+### 2. Test Locally:
+
+```
+Run: python app.py.
+Open http://127.0.0.1:5000 in browser.
+Test enrollment: Navigate to enroll form, capture face—it sends to backend to store embedding.
+Test attendance: Capture frame, backend recognizes and logs if match, recording attendance with your face.
+
+### 3. Commit and Push Changes:
+
+```
+git add .
+git commit -m "Integrate Flask backend for face recognition and attendance logging"
+git push origin main
+
+### 4. Deploy to a Hosting Platform (e.g., Render):
+
+```
+Go to render.com, sign up, create a new "Web Service".
+Connect your GitHub repo.
+Set: Runtime = Python, Build Command = pip install -r requirements.txt, Start Command = python app.py.
+Environment variables: None needed initially.
+Deploy—Render builds and hosts. URL: e.g., https://your-app.onrender.com.
+For webcam: Ensure HTTPS (Render provides it) as browsers require secure context for camera access.
+In Nigeria, use a VPN if deployment fails due to network issues.
+
+### 5. Troubleshooting:
+
+```
+Errors with dlib/face_recognition: Ensure CMake is installed (for building dlib).
+Database issues: Check permissions.
+Webcam: Frontend must use HTTPS for production.
+Scale: For production, migrate to PostgreSQL and add worker queues.

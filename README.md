@@ -58,6 +58,7 @@ cd Face-Capture-System
 
 ### 2. Clone the Repository Locally (If Not Already Done):
 
+```
 Navigate to your project folder: cd path/to/Face-Capture-System.
 If not cloned: git clone https://github.com/victordeman/Face-Capture-System.git.
 
@@ -69,3 +70,4 @@ flask-jwt-extended: For authentication.
 face_recognition: For embeddings (installs dlib automatically).
 opencv-python: For image processing.
 cryptography: For encryption.
+```

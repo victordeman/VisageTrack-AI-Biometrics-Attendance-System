@@ -42,7 +42,7 @@
             </div>
 
             <!-- Status Message -->
-            <div id="status" class="text-center text-lg font-medium mb-6 text-slate-700 dark:text-slate-300">
+            <div id="status" class="text-center text-lg font-medium mb-6 text-slate-700 dark:text-slate-300 min-h-[3rem] flex items-center justify-center">
                 Waiting for camera access...
             </div>
 
@@ -69,41 +69,55 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
-                status.textContent = 'Camera ready. Fill form and click to enroll.';
+                status.textContent = 'Camera ready. Fill your details and click Enroll Now.';
                 enrollBtn.disabled = false;
             } catch (err) {
-                status.textContent = 'Camera access denied. Please allow webcam access.';
+                status.innerHTML = '<span class="text-red-600">Camera access denied. Please allow webcam access in browser settings.</span>';
                 console.error('Camera error:', err);
             }
         }
 
         // Capture multiple frames and enroll
         async function enrollFace() {
-            const name = document.getElementById('name').value;
-            const email = document.getElementById('email').value;
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+
             if (!name || !email) {
-                status.textContent = 'Please fill in name and email.';
+                status.innerHTML = '<span class="text-red-600">Please fill in both name and email.</span>';
                 return;
             }
 
             enrollBtn.disabled = true;
-            status.textContent = 'Capturing multiple angles... Please follow prompts.';
+            enrollBtn.innerHTML = '<i data-feather="loader" class="w-6 h-6 animate-spin"></i> Processing...';
+            status.innerHTML = 'Capturing your face from different angles... Please follow the prompts.';
 
             const formData = new FormData();
             formData.append('name', name);
             formData.append('email', email);
 
-            const prompts = ['Look straight', 'Tilt left', 'Tilt right', 'Look up', 'Look down', 'Smile', 'Neutral', 'Turn slightly left', 'Turn slightly right', 'Done!'];
+            const prompts = [
+                'Look straight ahead',
+                'Tilt head slightly left',
+                'Tilt head slightly right',
+                'Look up',
+                'Look down',
+                'Give a small smile',
+                'Neutral expression',
+                'Turn head slightly left',
+                'Turn head slightly right',
+                'Almost done...'
+            ];
+
             for (let i = 0; i < 10; i++) {
                 status.textContent = prompts[i];
-                await new Promise(resolve => setTimeout(resolve, 1000));  // 1s delay for positioning
+                await new Promise(r => setTimeout(r, 1200)); // Give user time to position
 
                 const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 canvas.getContext('2d').drawImage(video, 0, 0);
 
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
                 formData.append(`image${i+1}`, blob, `image${i+1}.jpg`);
             }
 
@@ -111,23 +125,44 @@
                 const token = localStorage.getItem('jwt_token');
                 const response = await fetch('/api/enroll', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: formData
                 });
-                const data = await response.json();
-                status.innerHTML = response.ok ? `<span class="text-emerald-600 font-bold">${data.message}</span>` : `<span class="text-red-600">${data.message}</span>`;
-                enrollBtn.disabled = !response.ok;
+
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {
+                    data = { message: 'Server returned invalid response' };
+                }
+
+                const message = data.message || (response.ok ? 'Success!' : `Error (HTTP ${response.status})`);
+
+                if (response.ok) {
+                    status.innerHTML = `<span class="text-emerald-600 font-bold">${message}</span>`;
+                    enrollBtn.innerHTML = '<i data-feather="check-circle" class="w-6 h-6"></i> Enrolled Successfully!';
+                    enrollBtn.classList.remove('bg-gradient-to-r', 'from-primary-600', 'to-secondary-600');
+                    enrollBtn.classList.add('bg-emerald-600');
+                    enrollBtn.disabled = true;
+                } else {
+                    status.innerHTML = `<span class="text-red-600 font-medium">${message}</span>`;
+                    enrollBtn.innerHTML = '<i data-feather="user-plus" class="w-6 h-6"></i> Enroll Now';
+                    enrollBtn.disabled = false;
+                }
             } catch (err) {
-                status.textContent = 'Error enrolling. Try again.';
+                status.innerHTML = '<span class="text-red-600">Network error. Please check your connection and try again.</span>';
+                enrollBtn.innerHTML = '<i data-feather="user-plus" class="w-6 h-6"></i> Enroll Now';
                 enrollBtn.disabled = false;
-                console.error(err);
+                console.error('Enrollment error:', err);
             }
         }
 
         // Event listeners
         enrollBtn.addEventListener('click', enrollFace);
 
-        // Start camera
+        // Start camera on page load
         startCamera();
     </script>
 </body>

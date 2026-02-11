@@ -1,18 +1,18 @@
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, session
 from flask_restful import Api, Resource
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity, verify_jwt_in_request
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 import sqlite3
 import numpy as np
 import face_recognition
 import cv2
 from cryptography.fernet import Fernet
-import base64
 import os
 import functools
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 api = Api(app)
-app.config['JWT_SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'  # Fixed length warning
+app.secret_key = 'visage-track-2026-super-secure-key-32bytes'  # Used for session and JWT
+app.config['JWT_SECRET_KEY'] = app.secret_key
 jwt = JWTManager(app)
 
 # Encryption key
@@ -29,11 +29,13 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", ('Admin', 'admin@ex.com', 'pass123', 'admin'))
     c.execute("INSERT OR IGNORE INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", ('Employee', 'employee@ex.com', 'pass123', 'employee'))
     conn.commit()
+    c.execute("SELECT * FROM users")
+    print("Users in DB:", c.fetchall())
     conn.close()
 
 init_db()
 
-# Helpers (unchanged)
+# Helpers
 def encode_embedding(embedding):
     return cipher.encrypt(embedding.tobytes())
 
@@ -48,15 +50,13 @@ def is_live(frames):
     diff = cv2.absdiff(gray1, gray2)
     return np.mean(diff) > 5
 
-# Token decorator (unchanged)
-def token_required(view):
+# Session-based decorator for HTML routes
+def login_required(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
-        try:
-            verify_jwt_in_request()
-            return view(**kwargs)
-        except:
+        if 'user_id' not in session:
             return redirect(url_for('index'))
+        return view(**kwargs)
     return wrapped_view
 
 class Login(Resource):
@@ -72,9 +72,18 @@ class Login(Resource):
         conn.close()
         
         if user:
+            # Set session for HTML protection
+            session['user_id'] = user[0]
+            session['role'] = user[1]
+            # Also return JWT for APIs
             access_token = create_access_token(identity={'id': user[0], 'role': user[1]})
             return {'access_token': access_token, 'role': user[1]}
         return {'message': 'Invalid credentials'}, 401
+
+class Logout(Resource):
+    def get(self):
+        session.clear()
+        return {'message': 'Logged out'}, 200
 
 class Enroll(Resource):
     @jwt_required()
@@ -140,12 +149,12 @@ class Recognize(Resource):
         conn.close()
         return {'message': 'Face not recognized'}, 401
 
-# Admin Resources (unchanged)
+# Admin Resources
 class AdminUsers(Resource):
     @jwt_required()
     def get(self):
         current_user = get_jwt_identity()
-        if current_user.get('role') != 'admin':
+        if current_user['role'] != 'admin':
             return {'message': 'Admin access required'}, 403
         
         conn = sqlite3.connect('database.db')
@@ -161,7 +170,7 @@ class AdminAttendance(Resource):
         current_user = get_jwt_identity()
         conn = sqlite3.connect('database.db')
         c = conn.cursor()
-        if current_user.get('role') == 'admin':
+        if current_user['role'] == 'admin':
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
         else:
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (current_user['id'],))
@@ -170,31 +179,32 @@ class AdminAttendance(Resource):
         return {'logs': logs}
 
 api.add_resource(Login, '/api/login')
+api.add_resource(Logout, '/api/logout')
 api.add_resource(Enroll, '/api/enroll')
 api.add_resource(Recognize, '/api/recognize')
 api.add_resource(AdminUsers, '/api/admin/users')
 api.add_resource(AdminAttendance, '/api/admin/attendance')
 
-# Protected pages
+# Protected pages (now with login_required using session)
 @app.route('/attendance')
-@token_required
+@login_required
 def serve_attendance_page():
     return send_from_directory('.', 'attendance.html')
 
 @app.route('/enroll')
-@token_required
+@login_required
 def serve_enroll_page():
     return send_from_directory('.', 'enroll.html')
 
 @app.route('/dashboard')
-@token_required
+@login_required
 def serve_dashboard_page():
     return send_from_directory('.', 'dashboard.html')
 
 @app.route('/admin')
-@token_required
+@login_required
 def serve_admin_dashboard():
-    if get_jwt_identity().get('role') != 'admin':
+    if session.get('role') != 'admin':
         return redirect(url_for('serve_dashboard_page'))
     return send_from_directory('.', 'admin.html')
 

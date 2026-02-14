@@ -34,7 +34,7 @@ if (loginForm) {
       if (response.ok) {
         localStorage.setItem('jwt_token', data.access_token);
         alert('Logged in! Redirecting...');
-        window.location.href = role === 'admin' ? '/admin' : '/dashboard';  // Or attendance
+        window.location.href = role === 'admin' ? '/admin' : '/dashboard';
       } else {
         alert(data.message || 'Login failed');
       }
@@ -67,7 +67,8 @@ async function recordAttendance(video, status, clockInBtn) {
       body: formData
     });
     const data = await response.json();
-    status.innerHTML = response.ok ? `<span class="text-emerald-600 font-bold">${data.message}</span>` : `<span class="text-red-600">${data.message}</span>`;
+    const message = data.message || (response.ok ? 'Success!' : 'Unknown error');
+    status.innerHTML = response.ok ? `<span class="text-emerald-600 font-bold">${message}</span>` : `<span class="text-red-600">${message}</span>`;
     if (response.ok) {
       clockInBtn.innerHTML = '<i data-feather="check-circle"></i> Attendance Recorded!';
       clockInBtn.classList.add('bg-emerald-600');
@@ -91,11 +92,5 @@ if (clockInBtn) {
 
 // Enroll Face (on enroll.html) - Moved to inline script in enroll.html for page-specific logic
 
-// Face-api.js demo init (optional for client-side help)
-Promise.all([
-  faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/models'),
-  faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/models'),
-  faceapi.nets.faceRecognitionNet.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/models')
-]).then(() => {
-  console.log('Face-api models loaded. Ready to record attendance with your face.');
-}).catch(err => console.error('Face-api load error:', err));
+// Remove face-api promise to avoid load error (optional library not used in core logic)
+console.log('Ready to record attendance with your face. Face-api not loaded due to CDN issues.');

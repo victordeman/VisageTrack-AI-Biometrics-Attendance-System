@@ -1,25 +1,83 @@
-/* Custom styles beyond Tailwind */
-body {
-  font-family: 'Inter', sans-serif; /* Fallback font */
+/* style.css - Clean, modern, purple theme - No Tailwind */
+:root {
+  --primary: #7c3aed;
+  --primary-dark: #6d28d9;
+  --secondary: #0891b2;
+  --bg-light: #f8fafc;
+  --bg-dark: #0f172a;
+  --text-light: #1e2937;
+  --text-dark: #e2e8f0;
 }
 
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg-light);
+  color: var(--text-light);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.dark body {
+  background-color: var(--bg-dark);
+  color: var(--text-dark);
+}
+
+/* Navbar */
 .custom-navbar {
-  background-color: #f8f9fa; /* Light mode */
-  padding: 1rem;
+  background: white;
   border-bottom: 1px solid #e2e8f0;
+  padding: 1rem 1.5rem;
 }
 
 .dark .custom-navbar {
-  background-color: #1a202c; /* Dark mode */
-  border-bottom: 1px solid #2d3748;
+  background: #1e2937;
+  border-bottom-color: #334155;
 }
 
-/* Fix for any overflow or z-index issues */
-.relative {
+/* Cards */
+.card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s;
+}
+
+.dark .card {
+  background: #1e2937;
+  border-color: #334155;
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(to right, #7c3aed, #0891b2);
+  color: white;
+  padding: 14px 28px;
+  border-radius: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgb(124 58 237 / 0.4);
+}
+
+/* Video preview */
+.video-container {
   position: relative;
+  border: 4px solid #7c3aed;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
 }
 
-/* Animation overrides if needed */
-.animate-pulse-slow {
-  animation-duration: 3s;
+.video-container video {
+  width: 100%;
+  display: block;
 }
+
+/* Status messages */
+.status-success { color: #10b981; font-weight: 600; }
+.status-error { color: #ef4444; font-weight: 600; }

@@ -205,6 +205,11 @@ def api_admin_attendance():
     conn.close()
     return jsonify({'logs': logs}), 200
 
+@app.route('/api/logs', methods=['GET'])
+@jwt_required()
+def api_logs():
+    return api_admin_attendance()
+
 # Protected HTML pages
 @app.route('/attendance')
 @login_required

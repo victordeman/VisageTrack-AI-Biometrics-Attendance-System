@@ -216,6 +216,7 @@ def api_admin_users():
         users = [dict(row) for row in c.fetchall()]
     return jsonify({'users': users}), 200
 
+@app.route('/api/logs', methods=['GET'])
 @app.route('/api/admin/attendance', methods=['GET'])
 @jwt_required()
 def api_admin_attendance():

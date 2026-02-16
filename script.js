@@ -82,15 +82,118 @@ async function recordAttendance(video, status, clockInBtn) {
   }
 }
 
+// Camera helper
+async function startCamera(videoElement) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    videoElement.srcObject = stream;
+  } catch (err) {
+    console.error("Error accessing camera:", err);
+    alert("Could not access camera. Please ensure you have given permission.");
+  }
+}
+
 // If on attendance page, attach listener
 const clockInBtn = document.getElementById('clock-in-btn');
 if (clockInBtn) {
   const video = document.getElementById('video');
   const status = document.getElementById('status');
+  startCamera(video);
   clockInBtn.addEventListener('click', () => recordAttendance(video, status, clockInBtn));
 }
 
-// Enroll Face (on enroll.html) - Moved to inline script in enroll.html for page-specific logic
+// Enroll Face Logic
+const enrollBtn = document.getElementById('enroll-btn');
+if (enrollBtn) {
+  const video = document.getElementById('video');
+  const status = document.getElementById('status');
+  const enrollForm = document.getElementById('enroll-form');
+  startCamera(video);
+
+  enrollBtn.addEventListener('click', async () => {
+    const name = document.getElementById('name').value;
+    const email = document.getElementById('email').value;
+    if (!name || !email) {
+      alert("Please enter name and email");
+      return;
+    }
+
+    enrollBtn.disabled = true;
+    status.textContent = 'Capturing 5 frames for enrollment...';
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('email', email);
+
+    for (let i = 1; i <= 5; i++) {
+      status.textContent = `Capturing frame ${i}/5...`;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      formData.append(`image${i}`, blob, `frame${i}.jpg`);
+      await new Promise(resolve => setTimeout(resolve, 500)); // wait 0.5s between captures
+    }
+
+    try {
+      const token = localStorage.getItem('jwt_token');
+      if (!token) {
+        alert("Please login first");
+        window.location.href = '/';
+        return;
+      }
+      status.textContent = 'Uploading embeddings...';
+      const response = await fetch('/api/enroll', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const data = await response.json();
+      if (response.ok) {
+        status.innerHTML = `<span class="text-emerald-600 font-bold">Enrollment Successful!</span>`;
+      } else {
+        status.innerHTML = `<span class="text-red-600">${data.message || 'Enrollment failed'}</span>`;
+        enrollBtn.disabled = false;
+      }
+    } catch (err) {
+      status.textContent = 'Error connecting to server.';
+      enrollBtn.disabled = false;
+      console.error(err);
+    }
+  });
+}
+
+// Fetch and display logs if on admin or dashboard page with a logs container
+async function loadLogs() {
+  const logsContainer = document.getElementById('logs');
+  if (!logsContainer) return;
+
+  try {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) return;
+
+    const response = await fetch('/api/logs', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    if (response.ok) {
+      logsContainer.innerHTML = data.logs.map(log => `
+        <div class="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg flex justify-between items-center border border-slate-200 dark:border-slate-700">
+          <div>
+            <p class="font-bold text-primary-600">${log.name}</p>
+            <p class="text-sm text-slate-500">${log.timestamp}</p>
+          </div>
+          <span class="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold uppercase">${log.status}</span>
+        </div>
+      `).join('') || '<p class="text-center text-slate-500">No logs found.</p>';
+    }
+  } catch (err) {
+    console.error("Error loading logs:", err);
+  }
+}
+
+loadLogs();
 
 // Remove face-api promise to avoid load error (optional library not used in core logic)
 console.log('Ready to record attendance with your face. Face-api not loaded due to CDN issues.');

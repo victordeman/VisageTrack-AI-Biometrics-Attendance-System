@@ -1,15 +1,6 @@
 // Initialize Feather icons
 feather.replace();
 
-// Theme toggle
-const themeToggle = document.getElementById('theme-toggle');
-if (themeToggle) {
-  themeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('dark');
-    localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
-  });
-}
-
 // Load saved theme
 if (localStorage.getItem('theme') === 'dark') {
   document.body.classList.add('dark');
@@ -33,6 +24,7 @@ if (loginForm) {
       const data = await response.json();
       if (response.ok) {
         localStorage.setItem('jwt_token', data.access_token);
+        localStorage.setItem('user_role', data.role);
         alert('Logged in! Redirecting...');
         window.location.href = role === 'admin' ? '/admin' : '/dashboard';
       } else {

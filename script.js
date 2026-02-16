@@ -87,7 +87,52 @@ const clockInBtn = document.getElementById('clock-in-btn');
 if (clockInBtn) {
   const video = document.getElementById('video');
   const status = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+
+  // Initialize camera for attendance
+  async function initAttendanceCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      if (statusText) statusText.textContent = 'Camera ready';
+    } catch (err) {
+      console.error('Camera error:', err);
+      if (statusText) statusText.textContent = 'Camera error or permission denied';
+    }
+  }
+  initAttendanceCamera();
+
   clockInBtn.addEventListener('click', () => recordAttendance(video, status, clockInBtn));
+}
+
+// Fetch and display logs (on admin or dashboard pages)
+const logsContainer = document.getElementById('logs');
+if (logsContainer) {
+  async function fetchLogs() {
+    try {
+      const token = localStorage.getItem('jwt_token');
+      const response = await fetch('/api/logs', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        logsContainer.innerHTML = data.logs.map(log => `
+          <div class="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+            <div>
+              <p class="font-bold">${log.name}</p>
+              <p class="text-sm text-slate-500">${log.timestamp}</p>
+            </div>
+            <span class="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold uppercase">${log.status}</span>
+          </div>
+        `).join('') || '<p class="text-center text-slate-500 py-8">No attendance logs found yet.</p>';
+      } else if (response.status === 401 || response.status === 422) {
+        window.location.href = '/';
+      }
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+    }
+  }
+  fetchLogs();
 }
 
 // Enroll Face (on enroll.html) - Moved to inline script in enroll.html for page-specific logic

@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 import os
 import functools
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__)
 app.secret_key = 'visage-track-2026-super-secure-key-32bytes'
 app.config['JWT_SECRET_KEY'] = app.secret_key
 jwt = JWTManager(app)
@@ -50,7 +50,7 @@ def login_required(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('index'))
+            return redirect(url_for('index_page'))
         return view(**kwargs)
     return wrapped_view
 
@@ -200,7 +200,7 @@ def api_admin_attendance():
     if role == 'admin':
         c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
     else:
-        c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (identity,))
+        c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (int(identity),))
     logs = [{'id': row[0], 'name': row[1], 'timestamp': row[2], 'status': row[3]} for row in c.fetchall()]
     conn.close()
     return jsonify({'logs': logs}), 200
@@ -235,13 +235,22 @@ def serve_admin_dashboard():
 
 # Static serving
 @app.route('/')
-def index():
+def index_page():
     return send_from_directory('.', 'index.html')
 
 @app.route('/<path:path>')
 def static_files(path):
+    # Block sensitive files from being served as static content
+    sensitive_extensions = ('.py', '.db', '.sqlite', '.log', '.key', '.sh')
+    if path.endswith(sensitive_extensions) or path.startswith('.'):
+        return redirect(url_for('index_page'))
+
     if os.path.exists(path):
         return send_from_directory('.', path)
+
+    # If it's a known route but without .html, we shouldn't reach here
+    # because Flask matches more specific routes first.
+    # Fallback to index.html for SPA-like behavior
     return send_from_directory('.', 'index.html')
 
 if __name__ == '__main__':

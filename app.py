@@ -11,6 +11,7 @@ import logging
 import uuid
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import HTTPException
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -124,6 +125,10 @@ def log_request_info():
 
 @app.errorhandler(Exception)
 def handle_error(e):
+    # Pass through HTTP errors
+    if isinstance(e, HTTPException):
+        return e
+    
     logger.error(f"Error: {str(e)}", exc_info=True)
     return jsonify({'message': 'An internal error occurred', 'error': str(e)}), 500
 
@@ -132,6 +137,11 @@ def handle_error(e):
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    session.clear()
+    return jsonify({'message': 'Logged out successfully'}), 200
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -153,7 +163,11 @@ def api_login():
         session['user_id'] = user['id']
         session['role'] = user['role']
         token = create_access_token(identity=str(user['id']))
-        return jsonify({'access_token': token, 'role': user['role']}), 200
+        return jsonify({
+            'message': 'Login successful',
+            'access_token': token, 
+            'role': user['role']
+        }), 200
     
     return jsonify({'message': 'Invalid credentials'}), 401
 
@@ -242,6 +256,28 @@ def api_recognize():
 
     return jsonify({'message': 'Face not recognized'}), 401
 
+@app.route('/api/admin/stats', methods=['GET'])
+@jwt_required()
+def api_admin_stats():
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user or user['role'] != 'admin':
+            return jsonify({'message': 'Admin access required'}), 403
+
+        c.execute("SELECT COUNT(*) as count FROM users")
+        user_count = c.fetchone()['count']
+        c.execute("SELECT COUNT(*) as count FROM attendance")
+        log_count = c.fetchone()['count']
+        
+        return jsonify({
+            'message': 'Stats retrieved successfully',
+            'user_count': user_count,
+            'log_count': log_count
+        }), 200
+
 @app.route('/api/logs', methods=['GET'])
 @app.route('/api/admin/attendance', methods=['GET'])
 @jwt_required()
@@ -249,15 +285,68 @@ def api_admin_attendance():
     user_id = get_jwt_identity()
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        c.execute("SELECT id, role FROM users WHERE id = ?", (user_id,))
         user = c.fetchone()
         
+        if not user:
+            return jsonify({'message': 'User not found', 'logs': []}), 404
+
         if user['role'] == 'admin':
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
         else:
-            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (user_id,))
+            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (user['id'],))
+        
         logs = [dict(row) for row in c.fetchall()]
-    return jsonify({'logs': logs}), 200
+        logger.info(f"Retrieved {len(logs)} logs for user {user_id}")
+        
+    return jsonify({'message': 'Logs retrieved successfully', 'logs': logs}), 200
+
+@app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
+def api_admin_users():
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user or user['role'] != 'admin':
+            return jsonify({'message': 'Admin access required'}), 403
+
+        c.execute("SELECT id, name, email, role, image_path FROM users")
+        users = [dict(row) for row in c.fetchall()]
+    return jsonify({'message': 'Users retrieved successfully', 'users': users}), 200
+
+@app.route('/api/admin/users/<int:target_user_id>', methods=['DELETE'])
+@jwt_required()
+def api_admin_delete_user(target_user_id):
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user or user['role'] != 'admin':
+            return jsonify({'message': 'Admin access required'}), 403
+
+        # Delete user and their attendance
+        c.execute("DELETE FROM attendance WHERE user_id = ?", (target_user_id,))
+        c.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
+        conn.commit()
+    return jsonify({'message': f'User {target_user_id} and their records deleted'}), 200
+
+@app.route('/api/admin/attendance/<int:log_id>', methods=['DELETE'])
+@jwt_required()
+def api_admin_delete_log(log_id):
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user or user['role'] != 'admin':
+            return jsonify({'message': 'Admin access required'}), 403
+
+        c.execute("DELETE FROM attendance WHERE id = ?", (log_id,))
+        conn.commit()
+    return jsonify({'message': f'Attendance log {log_id} deleted'}), 200
 
 # ====================== PAGE ROUTES ======================
 

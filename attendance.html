@@ -6,7 +6,6 @@
     <title>Clock In - VisageTrack AI</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -25,47 +24,35 @@
                             500: '#06b6d4',
                             600: '#0891b2',
                         }
-                    },
-                    animation: {
-                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'scan': 'scan 2s linear infinite',
-                    },
-                    keyframes: {
-                        scan: {
-                            '0%': { transform: 'translateY(-100%)' },
-                            '100%': { transform: 'translateY(100%)' }
-                        }
                     }
                 }
             }
         }
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
 </head>
-<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-colors duration-300">
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-colors duration-300 min-h-screen flex flex-col">
     <custom-navbar></custom-navbar>
 
-    <main class="flex-grow flex items-center justify-center p-6 min-h-[calc(100vh-80px)]">
-        <div class="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-10 max-w-2xl w-full border border-slate-200 dark:border-slate-700">
-            <h1 class="text-4xl font-bold text-center mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-secondary-600">
-                Clock In Now
-            </h1>
+    <main class="flex-grow flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 min-h-[calc(100vh-64px)]">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-200 dark:border-slate-700 max-w-2xl w-full">
+            <h1 class="text-4xl font-bold text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-secondary-600">Clock In Now</h1>
             <p class="text-center text-lg mb-8 text-slate-600 dark:text-slate-400">
                 Position your face clearly and click to record attendance with your face.
             </p>
 
-            <div class="relative rounded-2xl overflow-hidden border-4 border-primary-500 shadow-lg mb-8 bg-black aspect-video flex items-center justify-center">
+            <div class="relative rounded-2xl overflow-hidden border-4 border-primary-500/20 mb-8 mt-8 bg-slate-900 aspect-video">
                 <video id="video" autoplay playsinline class="w-full h-full object-cover"></video>
-                <div class="absolute inset-0 bg-gradient-to-b from-transparent via-primary-500/30 to-transparent h-1/3 w-full animate-scan pointer-events-none"></div>
-                <div class="absolute inset-0 border-2 border-white/20 pointer-events-none"></div>
+                <div class="absolute inset-0 border-2 border-primary-500/50 pointer-events-none"></div>
             </div>
 
-            <div id="status" class="text-center p-4 rounded-xl mb-6 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium transition-all duration-300">
-                Waiting for camera...
+            <div id="status" class="text-center text-lg font-medium mb-6 text-slate-600 dark:text-slate-400">
+                <span id="status-text">Grant camera access to begin</span>
             </div>
 
-            <button id="clock-in-btn" class="w-full py-4 rounded-xl bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] flex items-center justify-center gap-3 group">
-                <i data-feather="camera" class="group-hover:rotate-12 transition-transform"></i>
-                <span>Record Attendance with Your Face</span>
+            <button id="clock-in-btn" class="w-full py-4 rounded-xl bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] flex items-center justify-center gap-3">
+                <i data-feather="camera" class="w-5 h-5"></i>
+                Record Attendance with Your Face
             </button>
         </div>
     </main>
@@ -75,4 +62,3 @@
     <script>feather.replace();</script>
 </body>
 </html>
-

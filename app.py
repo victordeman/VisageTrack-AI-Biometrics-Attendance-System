@@ -23,7 +23,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__, static_folder=None)
 app.secret_key = 'visage-track-2026-super-secure-key-32bytes'
 app.config['JWT_SECRET_KEY'] = app.secret_key
 jwt = JWTManager(app)
@@ -337,9 +337,18 @@ def serve_admin_dashboard():
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 @app.route('/<path:path>')
 def static_files(path):
-    if os.path.exists(path):
+    # Security: block access to sensitive files
+    blacklist = ['app.py', 'database.db', 'encryption.key', 'requirements.txt', '.gitignore', '.git', 'app_output.log', 'test_endpoints_v2.py']
+    if path in blacklist or path.endswith('.py') or path.endswith('.db') or path.endswith('.key'):
+        return jsonify({'message': 'Access denied'}), 403
+
+    if os.path.exists(path) and os.path.isfile(path):
         return send_from_directory('.', path)
     return send_from_directory('.', 'index.html')
 

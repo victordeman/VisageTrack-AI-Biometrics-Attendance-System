@@ -16,6 +16,7 @@ import logging
 import threading
 import time
 import shutil
+import werkzeug
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -23,7 +24,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder=None)
+app = Flask(__name__, static_folder=None, static_url_path=None)
 app.secret_key = 'visage-track-2026-super-secure-key-32bytes'
 app.config['JWT_SECRET_KEY'] = app.secret_key
 jwt = JWTManager(app)
@@ -252,6 +253,17 @@ def api_logs():
         logs = [dict(row) for row in c.fetchall()]
     return jsonify(logs), 200
 
+# Global Error Handler
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP errors
+    if isinstance(e, werkzeug.exceptions.HTTPException):
+        return e
+
+    # Log non-HTTP exceptions
+    logger.error(f"Unhandled Exception: {e}", exc_info=True)
+    return jsonify({"message": "Internal Server Error", "error": str(e)}), 500
+
 # Admin APIs
 @app.route('/api/admin/stats', methods=['GET'])
 @jwt_required()
@@ -343,14 +355,19 @@ def favicon():
 
 @app.route('/<path:path>')
 def static_files(path):
-    # Security: block access to sensitive files
+    # Security: block access to sensitive files and all python files
     blacklist = ['app.py', 'database.db', 'encryption.key', 'requirements.txt', '.gitignore', '.git', 'app_output.log', 'test_endpoints_v2.py']
-    if path in blacklist or path.endswith('.py') or path.endswith('.db') or path.endswith('.key'):
+    if path in blacklist or path.endswith(('.py', '.db', '.key', '.log')):
         return jsonify({'message': 'Access denied'}), 403
 
-    if os.path.exists(path) and os.path.isfile(path):
-        return send_from_directory('.', path)
-    return send_from_directory('.', 'index.html')
+    root_dir = os.path.abspath(os.path.dirname(__file__))
+    file_path = os.path.join(root_dir, path)
+
+    if os.path.isfile(file_path):
+        return send_from_directory(root_dir, path)
+
+    # Fallback to index.html for unknown routes (SPA-like)
+    return send_from_directory(root_dir, 'index.html')
 
 def image_processor_thread():
     logger.info("Starting background image processor...")
@@ -363,6 +380,8 @@ def image_processor_thread():
 
                     frame = cv2.imread(filepath)
                     if frame is None:
+                        logger.warning(f"Could not read image {filename}, moving to processed anyway")
+                        shutil.move(filepath, os.path.join(PROCESSED_DIR, filename))
                         continue
 
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 import os
 import functools
 import logging
+import uuid
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -16,9 +17,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='.', static_url_path='')
-app.secret_key = 'visage-track-2026-super-secure-key-32bytes'
-app.config['JWT_SECRET_KEY'] = app.secret_key
+
+# Configuration
+app.config['SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'
+app.config['JWT_SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'
+app.config['JWT_TOKEN_LOCATION'] = ['headers']
+
 jwt = JWTManager(app)
+
+# Ensure uploads directory exists
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Encryption key persistence
 KEY_FILE = 'encryption.key'
@@ -44,9 +53,28 @@ def get_db():
 def init_db():
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT, role TEXT, embedding BLOB)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY, user_id INTEGER, timestamp TEXT, status TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            name TEXT, 
+            email TEXT UNIQUE, 
+            password TEXT, 
+            role TEXT, 
+            embedding BLOB,
+            image_path TEXT
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            user_id INTEGER, 
+            timestamp TEXT, 
+            status TEXT
+        )''')
         
+        # Check if image_path column exists (simple migration)
+        c.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'image_path' not in columns:
+            c.execute("ALTER TABLE users ADD COLUMN image_path TEXT")
+
         # Add default admin if not exists
         c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
         if not c.fetchone():
@@ -60,7 +88,7 @@ def init_db():
                       ('Employee', 'employee@ex.com', generate_password_hash('pass123'), 'employee'))
         
         conn.commit()
-        logger.info("Database initialized")
+        logger.info("Database initialized.")
 
 init_db()
 
@@ -71,13 +99,6 @@ def encode_embedding(embedding):
 def decode_embedding(encrypted):
     return np.frombuffer(cipher.decrypt(encrypted), dtype=np.float64)
 
-def is_live(frames):
-    if len(frames) < 2:
-        return False
-    gray1 = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
-    return np.mean(cv2.absdiff(gray1, gray2)) > 5
-
 # Session decorator for HTML pages
 def login_required(view):
     @functools.wraps(view)
@@ -87,11 +108,37 @@ def login_required(view):
         return view(**kwargs)
     return wrapped_view
 
+# JWT Error Handlers
+@jwt.unauthorized_loader
+def unauthorized_response(callback):
+    return jsonify({'message': 'Missing Authorization Header'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_response(callback):
+    return jsonify({'message': 'Invalid Token', 'details': str(callback)}), 422
+
+@app.before_request
+def log_request_info():
+    if request.path.startswith('/api/'):
+        logger.info(f"API Request: {request.method} {request.path}")
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    logger.error(f"Error: {str(e)}", exc_info=True)
+    return jsonify({'message': 'An internal error occurred', 'error': str(e)}), 500
+
 # ====================== API ROUTES ======================
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.json
+    if not data:
+        return jsonify({'message': 'No data provided'}), 400
+    
     email = data.get('email')
     password = data.get('password')
     if not email or not password:
@@ -105,15 +152,14 @@ def api_login():
     if user and check_password_hash(user['password'], password):
         session['user_id'] = user['id']
         session['role'] = user['role']
-        token = create_access_token(identity={'id': user['id'], 'role': user['role']})
+        token = create_access_token(identity=str(user['id']))
         return jsonify({'access_token': token, 'role': user['role']}), 200
+    
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/api/enroll', methods=['POST'])
 @jwt_required()
 def api_enroll():
-    logger.info("=== ENROLL REQUEST RECEIVED ===")
-    
     name = request.form.get('name')
     email = request.form.get('email')
     password = request.form.get('password', 'defaultpass')
@@ -121,47 +167,39 @@ def api_enroll():
     if not name or not email:
         return jsonify({'message': 'Name and email are required'}), 400
 
-    images = []
-    for i in range(1, 11):
-        file = request.files.get(f'image{i}')
-        if file and file.filename:
-            try:
-                file_bytes = file.read()
-                frame = cv2.imdecode(np.frombuffer(file_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if frame is not None:
-                    images.append(frame)
-            except Exception as e:
-                logger.error(f"Error reading image {i}: {e}")
+    # Handle file storage
+    image_file = request.files.get('image1') # Just take the first one for simplicity
+    if not image_file:
+        return jsonify({'message': 'No image captured'}), 400
 
-    logger.info(f"Valid images captured: {len(images)}")
+    filename = f"{uuid.uuid4()}_{image_file.filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    
+    # Save file to disk
+    image_file.save(filepath)
+    logger.info(f"Saved enrollment image to {filepath}")
 
-    if len(images) < 2:
-        return jsonify({'message': 'At least 2 images required'}), 400
-
-    if not is_live(images[:2]):
-        return jsonify({'message': 'Liveness check failed'}), 400
-
-    embeddings = []
-    for frame in images:
+    # Process for recognition (generate embedding)
+    try:
+        frame = cv2.imread(filepath)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         locations = face_recognition.face_locations(rgb)
-        if locations:
-            embeddings.append(face_recognition.face_encodings(rgb, locations)[0])
-
-    if not embeddings:
-        return jsonify({'message': 'No face detected'}), 400
-
-    avg_embedding = np.mean(embeddings, axis=0)
-    encrypted = encode_embedding(avg_embedding)
-    hashed_password = generate_password_hash(password)
+        if not locations:
+            return jsonify({'message': 'No face detected in the image'}), 400
+        
+        embedding = face_recognition.face_encodings(rgb, locations)[0]
+        encrypted_embedding = encode_embedding(embedding)
+    except Exception as e:
+        logger.error(f"Error processing face: {e}")
+        return jsonify({'message': 'Error processing face image'}), 500
 
     with get_db() as conn:
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO users (name, email, embedding, role, password) VALUES (?, ?, ?, ?, ?)",
-                      (name, email, encrypted, 'employee', hashed_password))
+            c.execute("INSERT INTO users (name, email, embedding, image_path, role, password) VALUES (?, ?, ?, ?, ?, ?)",
+                      (name, email, encrypted_embedding, filename, 'employee', generate_password_hash(password)))
             conn.commit()
-            return jsonify({'message': 'Enrollment successful'}), 200
+            return jsonify({'message': 'Enrollment successful', 'image': filename}), 200
         except sqlite3.IntegrityError:
             return jsonify({'message': 'Email already enrolled'}), 400
 
@@ -172,11 +210,10 @@ def api_recognize():
         return jsonify({'message': 'No image file'}), 400
 
     image_file = request.files['image']
-    if image_file.filename == '':
-        return jsonify({'message': 'No selected file'}), 400
-
     file_bytes = image_file.read()
-    frame = cv2.imdecode(np.frombuffer(file_bytes, np.uint8), cv2.IMREAD_COLOR)
+    nparr = np.frombuffer(file_bytes, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
     if frame is None:
         return jsonify({'message': 'Invalid image'}), 400
 
@@ -193,43 +230,41 @@ def api_recognize():
         users = c.fetchall()
 
         for user in users:
-            stored = decode_embedding(user['embedding'])
-            distance = face_recognition.face_distance([stored], new_embedding)[0]
-            if distance < 0.6:
-                c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
-                conn.commit()
-                return jsonify({'message': 'Attendance recorded with your face', 'user_id': user['id']}), 200
+            try:
+                stored = decode_embedding(user['embedding'])
+                distance = face_recognition.face_distance([stored], new_embedding)[0]
+                if distance < 0.6:
+                    c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
+                    conn.commit()
+                    return jsonify({'message': 'Attendance recorded', 'user_id': user['id']}), 200
+            except Exception as e:
+                logger.error(f"Error matching face: {e}")
 
     return jsonify({'message': 'Face not recognized'}), 401
 
-# Admin APIs
-@app.route('/api/admin/users', methods=['GET'])
-@jwt_required()
-def api_admin_users():
-    current_user = get_jwt_identity()
-    if current_user['role'] != 'admin':
-        return jsonify({'message': 'Admin access required'}), 403
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, name, email, role FROM users")
-        users = [dict(row) for row in c.fetchall()]
-    return jsonify({'users': users}), 200
-
+@app.route('/api/logs', methods=['GET'])
 @app.route('/api/admin/attendance', methods=['GET'])
 @jwt_required()
 def api_admin_attendance():
-    current_user = get_jwt_identity()
+    user_id = get_jwt_identity()
     with get_db() as conn:
         c = conn.cursor()
-        if current_user['role'] == 'admin':
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        
+        if user['role'] == 'admin':
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
         else:
-            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (current_user['id'],))
+            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (user_id,))
         logs = [dict(row) for row in c.fetchall()]
     return jsonify({'logs': logs}), 200
 
-# Protected HTML pages
+# ====================== PAGE ROUTES ======================
+
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
 @app.route('/attendance')
 @login_required
 def serve_attendance_page():
@@ -252,11 +287,6 @@ def serve_admin_dashboard():
         return redirect(url_for('serve_dashboard_page'))
     return send_from_directory('.', 'admin.html')
 
-# Static serving
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
-
 @app.route('/<path:path>')
 def static_files(path):
     if os.path.exists(path):
@@ -264,4 +294,4 @@ def static_files(path):
     return send_from_directory('.', 'index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

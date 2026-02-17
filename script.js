@@ -138,6 +138,7 @@ if (enrollBtn) {
 
     try {
       const token = localStorage.getItem('jwt_token');
+      console.log("Enrolling. Token present:", !!token);
       if (!token) {
         alert("Please login first");
         window.location.href = '/';
@@ -171,6 +172,7 @@ async function loadLogs() {
 
   try {
     const token = localStorage.getItem('jwt_token');
+    console.log("Loading logs. Token present:", !!token);
     if (!token) return;
 
     const response = await fetch('/api/logs', {

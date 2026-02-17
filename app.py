@@ -16,8 +16,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='.', static_url_path='')
-app.secret_key = 'visage-track-2026-super-secure-key-32bytes'
-app.config['JWT_SECRET_KEY'] = app.secret_key
+
+# Configuration
+app.config['SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'
+app.config['JWT_SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'
+app.config['JWT_TOKEN_LOCATION'] = ['headers']
+app.config['JWT_HEADER_NAME'] = 'Authorization'
+app.config['JWT_HEADER_TYPE'] = 'Bearer'
+app.config['JWT_ERROR_MESSAGE_KEY'] = 'message'
+
 jwt = JWTManager(app)
 
 # Encryption key persistence
@@ -44,8 +51,20 @@ def get_db():
 def init_db():
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT, role TEXT, embedding BLOB)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY, user_id INTEGER, timestamp TEXT, status TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT UNIQUE,
+            password TEXT,
+            role TEXT,
+            embedding BLOB
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            timestamp TEXT,
+            status TEXT
+        )''')
 
         # Add default admin if not exists
         c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
@@ -60,7 +79,7 @@ def init_db():
                       ('Employee', 'employee@ex.com', generate_password_hash('pass123'), 'employee'))
 
         conn.commit()
-        logger.info("Database initialized")
+        logger.info("Database initialized and default users checked.")
 
 init_db()
 
@@ -76,7 +95,9 @@ def is_live(frames):
         return False
     gray1 = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
-    return np.mean(cv2.absdiff(gray1, gray2)) > 5
+    diff = np.mean(cv2.absdiff(gray1, gray2))
+    logger.info(f"Liveness diff: {diff}")
+    return diff > 5
 
 # Session decorator for HTML pages
 def login_required(view):
@@ -87,11 +108,38 @@ def login_required(view):
         return view(**kwargs)
     return wrapped_view
 
+# JWT Error Handlers
+@jwt.unauthorized_loader
+def unauthorized_response(callback):
+    return jsonify({'message': 'Missing Authorization Header', 'error': 'unauthorized'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_response(callback):
+    return jsonify({'message': 'Invalid Token', 'error': 'invalid_token', 'details': str(callback)}), 422
+
+@jwt.expired_token_loader
+def expired_token_response(jwt_header, jwt_payload):
+    return jsonify({'message': 'Token has expired', 'error': 'token_expired'}), 401
+
+@app.before_request
+def log_request_info():
+    if request.path.startswith('/api/'):
+        logger.info(f"API Request: {request.method} {request.path}")
+        logger.info(f"Headers: {dict(request.headers)}")
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    logger.error(f"Error: {str(e)}", exc_info=True)
+    return jsonify({'message': 'An internal error occurred', 'error': str(e)}), 500
+
 # ====================== API ROUTES ======================
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.json
+    if not data:
+        return jsonify({'message': 'No data provided'}), 400
+
     email = data.get('email')
     password = data.get('password')
     if not email or not password:
@@ -105,14 +153,17 @@ def api_login():
     if user and check_password_hash(user['password'], password):
         session['user_id'] = user['id']
         session['role'] = user['role']
-        token = create_access_token(identity={'id': user['id'], 'role': user['role']})
+        # Identity must be a string for consistent behavior in many JWT versions
+        token = create_access_token(identity=str(user['id']))
         return jsonify({'access_token': token, 'role': user['role']}), 200
+
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/api/enroll', methods=['POST'])
 @jwt_required()
 def api_enroll():
-    logger.info("=== ENROLL REQUEST RECEIVED ===")
+    logger.info("=== START ENROLLMENT ===")
+    user_id = get_jwt_identity()
 
     name = request.form.get('name')
     email = request.form.get('email')
@@ -133,23 +184,25 @@ def api_enroll():
             except Exception as e:
                 logger.error(f"Error reading image {i}: {e}")
 
-    logger.info(f"Valid images captured: {len(images)}")
+    logger.info(f"Captured {len(images)} images for enrollment")
 
     if len(images) < 2:
-        return jsonify({'message': 'At least 2 images required'}), 400
+        return jsonify({'message': 'At least 2 images required for liveness check'}), 400
 
     if not is_live(images[:2]):
-        return jsonify({'message': 'Liveness check failed'}), 400
+        return jsonify({'message': 'Liveness check failed. Please move slightly.'}), 400
 
     embeddings = []
     for frame in images:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         locations = face_recognition.face_locations(rgb)
         if locations:
-            embeddings.append(face_recognition.face_encodings(rgb, locations)[0])
+            encodings = face_recognition.face_encodings(rgb, locations)
+            if encodings:
+                embeddings.append(encodings[0])
 
     if not embeddings:
-        return jsonify({'message': 'No face detected'}), 400
+        return jsonify({'message': 'No face detected in any of the captured frames.'}), 400
 
     avg_embedding = np.mean(embeddings, axis=0)
     encrypted = encode_embedding(avg_embedding)
@@ -169,14 +222,12 @@ def api_enroll():
 @jwt_required()
 def api_recognize():
     if 'image' not in request.files:
-        return jsonify({'message': 'No image file'}), 400
+        return jsonify({'message': 'No image file provided'}), 400
 
     image_file = request.files['image']
-    if image_file.filename == '':
-        return jsonify({'message': 'No selected file'}), 400
-
     file_bytes = image_file.read()
     frame = cv2.imdecode(np.frombuffer(file_bytes, np.uint8), cv2.IMREAD_COLOR)
+
     if frame is None:
         return jsonify({'message': 'Invalid image'}), 400
 
@@ -193,44 +244,70 @@ def api_recognize():
         users = c.fetchall()
 
         for user in users:
-            stored = decode_embedding(user['embedding'])
-            distance = face_recognition.face_distance([stored], new_embedding)[0]
-            if distance < 0.6:
-                c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
-                conn.commit()
-                return jsonify({'message': 'Attendance recorded with your face', 'user_id': user['id']}), 200
+            try:
+                stored = decode_embedding(user['embedding'])
+                distance = face_recognition.face_distance([stored], new_embedding)[0]
+                if distance < 0.6:
+                    c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
+                    conn.commit()
+                    return jsonify({'message': 'Attendance recorded with your face', 'user_id': user['id']}), 200
+            except Exception as e:
+                logger.error(f"Error matching face for user {user['id']}: {e}")
 
-    return jsonify({'message': 'Face not recognized'}), 401
+    return jsonify({'message': 'Face not recognized. Please enroll first.'}), 401
 
-# Admin APIs
-@app.route('/api/admin/users', methods=['GET'])
-@jwt_required()
-def api_admin_users():
-    current_user = get_jwt_identity()
-    if current_user['role'] != 'admin':
-        return jsonify({'message': 'Admin access required'}), 403
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, name, email, role FROM users")
-        users = [dict(row) for row in c.fetchall()]
-    return jsonify({'users': users}), 200
-
+# Logs API
 @app.route('/api/logs', methods=['GET'])
 @app.route('/api/admin/attendance', methods=['GET'])
 @jwt_required()
 def api_admin_attendance():
-    current_user = get_jwt_identity()
+    user_id = get_jwt_identity()
     with get_db() as conn:
         c = conn.cursor()
-        if current_user['role'] == 'admin':
-            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+
+        if user['role'] == 'admin':
+            c.execute("""
+                SELECT a.id, u.name, a.timestamp, a.status
+                FROM attendance a
+                JOIN users u ON a.user_id = u.id
+                ORDER BY a.timestamp DESC
+            """)
         else:
-            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (current_user['id'],))
+            c.execute("""
+                SELECT a.id, u.name, a.timestamp, a.status
+                FROM attendance a
+                JOIN users u ON a.user_id = u.id
+                WHERE u.id = ?
+                ORDER BY a.timestamp DESC
+            """, (user_id,))
         logs = [dict(row) for row in c.fetchall()]
     return jsonify({'logs': logs}), 200
 
-# Protected HTML pages
+@app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
+def api_admin_users():
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user or user['role'] != 'admin':
+            return jsonify({'message': 'Admin access required'}), 403
+
+        c.execute("SELECT id, name, email, role FROM users")
+        users = [dict(row) for row in c.fetchall()]
+    return jsonify({'users': users}), 200
+
+# ====================== PAGE ROUTES ======================
+
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
 @app.route('/attendance')
 @login_required
 def serve_attendance_page():
@@ -253,11 +330,6 @@ def serve_admin_dashboard():
         return redirect(url_for('serve_dashboard_page'))
     return send_from_directory('.', 'admin.html')
 
-# Static serving
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
-
 @app.route('/<path:path>')
 def static_files(path):
     if os.path.exists(path):
@@ -265,4 +337,4 @@ def static_files(path):
     return send_from_directory('.', 'index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

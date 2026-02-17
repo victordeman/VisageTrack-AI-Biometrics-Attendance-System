@@ -33,6 +33,7 @@ if (loginForm) {
       const data = await response.json();
       if (response.ok) {
         localStorage.setItem('jwt_token', data.access_token);
+        console.log('Login successful, token saved.');
         alert('Logged in! Redirecting...');
         window.location.href = role === 'admin' ? '/admin' : '/dashboard';
       } else {
@@ -43,6 +44,18 @@ if (loginForm) {
       console.error(err);
     }
   });
+}
+
+// Camera helper
+async function startCamera(videoElement) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    videoElement.srcObject = stream;
+    console.log("Camera started successfully.");
+  } catch (err) {
+    console.error("Error accessing camera:", err);
+    alert("Could not access camera. Please ensure you have given permission and are using HTTPS.");
+  }
 }
 
 // Record Attendance (on attendance.html)
@@ -61,6 +74,8 @@ async function recordAttendance(video, status, clockInBtn) {
 
   try {
     const token = localStorage.getItem('jwt_token');
+    console.log("Recording attendance. Token present:", !!token);
+
     const response = await fetch('/api/recognize', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
@@ -69,27 +84,22 @@ async function recordAttendance(video, status, clockInBtn) {
     const data = await response.json();
     const message = data.message || (response.ok ? 'Success!' : 'Unknown error');
     status.innerHTML = response.ok ? `<span class="text-emerald-600 font-bold">${message}</span>` : `<span class="text-red-600">${message}</span>`;
+
     if (response.ok) {
       clockInBtn.innerHTML = '<i data-feather="check-circle"></i> Attendance Recorded!';
       clockInBtn.classList.add('bg-emerald-600');
+      feather.replace();
     } else {
       clockInBtn.disabled = false;
+      if (response.status === 401 || response.status === 422) {
+        alert("Session expired or invalid. Please login again.");
+        window.location.href = '/';
+      }
     }
   } catch (err) {
     status.textContent = 'Error connecting to server. Try again.';
     clockInBtn.disabled = false;
     console.error(err);
-  }
-}
-
-// Camera helper
-async function startCamera(videoElement) {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    videoElement.srcObject = stream;
-  } catch (err) {
-    console.error("Error accessing camera:", err);
-    alert("Could not access camera. Please ensure you have given permission.");
   }
 }
 
@@ -107,7 +117,6 @@ const enrollBtn = document.getElementById('enroll-btn');
 if (enrollBtn) {
   const video = document.getElementById('video');
   const status = document.getElementById('status');
-  const enrollForm = document.getElementById('enroll-form');
   startCamera(video);
 
   enrollBtn.addEventListener('click', async () => {
@@ -119,43 +128,48 @@ if (enrollBtn) {
     }
 
     enrollBtn.disabled = true;
-    status.textContent = 'Capturing 5 frames for enrollment...';
+    status.textContent = 'Capturing image...';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
 
     const formData = new FormData();
     formData.append('name', name);
     formData.append('email', email);
-
-    for (let i = 1; i <= 5; i++) {
-      status.textContent = `Capturing frame ${i}/5...`;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-      formData.append(`image${i}`, blob, `frame${i}.jpg`);
-      await new Promise(resolve => setTimeout(resolve, 500)); // wait 0.5s between captures
-    }
+    formData.append('image1', blob, 'enroll.jpg');
 
     try {
       const token = localStorage.getItem('jwt_token');
       console.log("Enrolling. Token present:", !!token);
+
       if (!token) {
         alert("Please login first");
         window.location.href = '/';
         return;
       }
-      status.textContent = 'Uploading embeddings...';
+
+      status.textContent = 'Uploading enrollment data...';
       const response = await fetch('/api/enroll', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
+
       const data = await response.json();
       if (response.ok) {
-        status.innerHTML = `<span class="text-emerald-600 font-bold">Enrollment Successful!</span>`;
+        status.innerHTML = `<span class="text-emerald-600 font-bold">Enrollment Successful! Image saved.</span>`;
+        enrollBtn.innerHTML = '<i data-feather="check-circle"></i> Enrolled';
+        feather.replace();
       } else {
         status.innerHTML = `<span class="text-red-600">${data.message || 'Enrollment failed'}</span>`;
         enrollBtn.disabled = false;
+        if (response.status === 401 || response.status === 422) {
+          alert("Session expired. Please login again.");
+          window.location.href = '/';
+        }
       }
     } catch (err) {
       status.textContent = 'Error connecting to server.';
@@ -165,7 +179,7 @@ if (enrollBtn) {
   });
 }
 
-// Fetch and display logs if on admin or dashboard page with a logs container
+// Fetch and display logs
 async function loadLogs() {
   const logsContainer = document.getElementById('logs');
   if (!logsContainer) return;
@@ -189,6 +203,8 @@ async function loadLogs() {
           <span class="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold uppercase">${log.status}</span>
         </div>
       `).join('') || '<p class="text-center text-slate-500">No logs found.</p>';
+    } else if (response.status === 401 || response.status === 422) {
+        console.warn("Unauthorized access to logs. User may need to re-login.");
     }
   } catch (err) {
     console.error("Error loading logs:", err);
@@ -197,5 +213,4 @@ async function loadLogs() {
 
 loadLogs();
 
-// Remove face-api promise to avoid load error (optional library not used in core logic)
-console.log('Ready to record attendance with your face. Face-api not loaded due to CDN issues.');
+console.log('VisageTrack AI Frontend Script Loaded.');

@@ -1,6 +1,38 @@
 // components/navbar.js
 class CustomNavbar extends HTMLElement {
   connectedCallback() {
+    const role = localStorage.getItem('user_role');
+    const isAdmin = role === 'admin';
+    const isLoggedIn = !!localStorage.getItem('jwt_token');
+
+    const adminLinks = isAdmin ? `
+      <li><a href="/dashboard" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Dashboard</a></li>
+      <li><a href="/admin" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Admin</a></li>
+    ` : '';
+
+    const mobileAdminLinks = isAdmin ? `
+      <li><a href="/dashboard" class="block text-slate-700 dark:text-slate-300">Dashboard</a></li>
+      <li><a href="/admin" class="block text-slate-700 dark:text-slate-300">Admin</a></li>
+    ` : '';
+
+    const logoutBtn = isLoggedIn ? `
+      <li>
+        <button id="logout-btn" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition flex items-center gap-2">
+          <i data-feather="log-out" class="w-4 h-4"></i>
+          Logout
+        </button>
+      </li>
+    ` : '';
+
+    const mobileLogoutBtn = isLoggedIn ? `
+      <li>
+        <button id="mobile-logout-btn" class="w-full text-left text-red-600 flex items-center gap-2">
+          <i data-feather="log-out" class="w-4 h-4"></i>
+          Logout
+        </button>
+      </li>
+    ` : '';
+
     this.innerHTML = `
       <nav class="custom-navbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
         <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -13,14 +45,8 @@ class CustomNavbar extends HTMLElement {
             <li><a href="/" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Home</a></li>
             <li><a href="/attendance" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Attendance</a></li>
             <li><a href="/enroll" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Enroll</a></li>
-            <li><a href="/dashboard" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Dashboard</a></li>
-            <li><a href="/admin" class="text-slate-700 dark:text-slate-300 hover:text-primary-600 transition">Admin</a></li>
-            <li>
-              <button id="logout-btn" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition flex items-center gap-2">
-                <i data-feather="log-out" class="w-4 h-4"></i>
-                Logout
-              </button>
-            </li>
+            ${adminLinks}
+            ${logoutBtn}
           </ul>
 
           <!-- Mobile Menu Button -->
@@ -35,14 +61,8 @@ class CustomNavbar extends HTMLElement {
             <li><a href="/" class="block text-slate-700 dark:text-slate-300">Home</a></li>
             <li><a href="/attendance" class="block text-slate-700 dark:text-slate-300">Attendance</a></li>
             <li><a href="/enroll" class="block text-slate-700 dark:text-slate-300">Enroll</a></li>
-            <li><a href="/dashboard" class="block text-slate-700 dark:text-slate-300">Dashboard</a></li>
-            <li><a href="/admin" class="block text-slate-700 dark:text-slate-300">Admin</a></li>
-            <li>
-              <button id="mobile-logout-btn" class="w-full text-left text-red-600 flex items-center gap-2">
-                <i data-feather="log-out" class="w-4 h-4"></i>
-                Logout
-              </button>
-            </li>
+            ${mobileAdminLinks}
+            ${mobileLogoutBtn}
           </ul>
         </div>
       </nav>
@@ -53,10 +73,12 @@ class CustomNavbar extends HTMLElement {
       try {
         await fetch('/api/logout', { method: 'POST' });
         localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user_role');
         window.location.href = '/';
       } catch (err) {
         console.error("Logout failed:", err);
         localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user_role');
         window.location.href = '/';
       }
     };

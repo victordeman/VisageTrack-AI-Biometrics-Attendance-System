@@ -42,19 +42,67 @@
             </p>
 
             <form id="enroll-form" class="space-y-6">
-                <div>
-                    <label for="name" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Full Name</label>
-                    <div class="relative">
-                        <i data-feather="user" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
-                        <input type="text" id="name" required placeholder="John Doe" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="first_name" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">First Name</label>
+                        <div class="relative">
+                            <i data-feather="user" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                            <input type="text" id="first_name" required placeholder="John" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="last_name" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Last Name</label>
+                        <div class="relative">
+                            <i data-feather="user" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                            <input type="text" id="last_name" required placeholder="Doe" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                        </div>
                     </div>
                 </div>
+
                 <div>
                     <label for="email" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Email Address</label>
                     <div class="relative">
                         <i data-feather="mail" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
                         <input type="email" id="email" required placeholder="john@example.com" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
                     </div>
+                </div>
+
+                <div>
+                    <label for="home_address" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Home Address</label>
+                    <div class="relative">
+                        <i data-feather="map-pin" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                        <input type="text" id="home_address" placeholder="123 Main St, City" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="dob" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date of Birth</label>
+                        <div class="relative">
+                            <i data-feather="calendar" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                            <input type="date" id="dob" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="department" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Department</label>
+                        <div class="relative">
+                            <i data-feather="briefcase" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                            <input type="text" id="department" placeholder="Engineering" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="job_designation" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Job Designation</label>
+                    <div class="relative">
+                        <i data-feather="award" class="absolute left-3 top-3 w-5 h-5 text-slate-400"></i>
+                        <input type="text" id="job_designation" placeholder="Software Engineer" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all">
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="is_admin" class="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500">
+                    <label for="is_admin" class="text-sm font-medium text-slate-700 dark:text-slate-300">Register as Administrator</label>
                 </div>
             </form>
 
@@ -109,11 +157,17 @@
         }
 
         async function captureImages() {
-            const name = document.getElementById('name').value;
+            const firstName = document.getElementById('first_name').value;
+            const lastName = document.getElementById('last_name').value;
             const email = document.getElementById('email').value;
+            const homeAddress = document.getElementById('home_address').value;
+            const dob = document.getElementById('dob').value;
+            const department = document.getElementById('department').value;
+            const jobDesignation = document.getElementById('job_designation').value;
+            const isAdmin = document.getElementById('is_admin').checked;
 
-            if (!name || !email) {
-                alert('Please fill in your name and email first.');
+            if (!firstName || !lastName || !email) {
+                alert('Please fill in first name, last name and email first.');
                 return;
             }
 
@@ -149,8 +203,15 @@
             feather.replace();
 
             const formData = new FormData();
-            formData.append('name', name);
+            formData.append('first_name', firstName);
+            formData.append('last_name', lastName);
             formData.append('email', email);
+            formData.append('home_address', homeAddress);
+            formData.append('dob', dob);
+            formData.append('department', department);
+            formData.append('job_designation', jobDesignation);
+            formData.append('is_admin', isAdmin);
+
             images.forEach((blob, i) => {
                 formData.append(`image${i+1}`, blob, `face_${i+1}.jpg`);
             });

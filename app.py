@@ -61,7 +61,13 @@ def init_db():
             password TEXT, 
             role TEXT, 
             embedding BLOB,
-            image_path TEXT
+            image_path TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            home_address TEXT,
+            dob TEXT,
+            department TEXT,
+            job_designation TEXT
         )''')
         c.execute('''CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -70,11 +76,21 @@ def init_db():
             status TEXT
         )''')
         
-        # Check if image_path column exists (simple migration)
+        # Check if new columns exist (simple migration)
         c.execute("PRAGMA table_info(users)")
         columns = [column[1] for column in c.fetchall()]
-        if 'image_path' not in columns:
-            c.execute("ALTER TABLE users ADD COLUMN image_path TEXT")
+        cols_to_add = {
+            'image_path': 'TEXT',
+            'first_name': 'TEXT',
+            'last_name': 'TEXT',
+            'home_address': 'TEXT',
+            'dob': 'TEXT',
+            'department': 'TEXT',
+            'job_designation': 'TEXT'
+        }
+        for col, col_type in cols_to_add.items():
+            if col not in columns:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
 
         # Add default admin if not exists
         c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
@@ -172,14 +188,35 @@ def api_login():
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/api/enroll', methods=['POST'])
-@jwt_required()
+@jwt_required(optional=True)
 def api_enroll():
-    name = request.form.get('name')
+    first_name = request.form.get('first_name')
+    last_name = request.form.get('last_name')
     email = request.form.get('email')
     password = request.form.get('password', 'defaultpass')
+    home_address = request.form.get('home_address')
+    dob = request.form.get('dob')
+    department = request.form.get('department')
+    job_designation = request.form.get('job_designation')
+    is_admin = request.form.get('is_admin') == 'true'
     
-    if not name or not email:
-        return jsonify({'message': 'Name and email are required'}), 400
+    if not first_name or not last_name or not email:
+        return jsonify({'message': 'First name, last name and email are required'}), 400
+
+    # Security check: only existing admins can create other admins
+    if is_admin:
+        current_user_id = get_jwt_identity()
+        if not current_user_id:
+            return jsonify({'message': 'Authentication required to create admin accounts'}), 401
+
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT role FROM users WHERE id = ?", (current_user_id,))
+            user = c.fetchone()
+            if not user or user['role'] != 'admin':
+                return jsonify({'message': 'Only administrators can create other admin accounts'}), 403
+
+    name = f"{first_name} {last_name}"
 
     # Handle file storage
     image_file = request.files.get('image1') # Just take the first one for simplicity
@@ -210,8 +247,12 @@ def api_enroll():
     with get_db() as conn:
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO users (name, email, embedding, image_path, role, password) VALUES (?, ?, ?, ?, ?, ?)",
-                      (name, email, encrypted_embedding, filename, 'employee', generate_password_hash(password)))
+            role = 'admin' if is_admin else 'employee'
+            c.execute("""INSERT INTO users
+                (name, email, embedding, image_path, role, password, first_name, last_name, home_address, dob, department, job_designation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                      (name, email, encrypted_embedding, filename, role, generate_password_hash(password),
+                       first_name, last_name, home_address, dob, department, job_designation))
             conn.commit()
             return jsonify({'message': 'Enrollment successful', 'image': filename}), 200
         except sqlite3.IntegrityError:
@@ -360,13 +401,14 @@ def serve_attendance_page():
     return send_from_directory('.', 'attendance.html')
 
 @app.route('/enroll')
-@login_required
 def serve_enroll_page():
     return send_from_directory('.', 'enroll.html')
 
 @app.route('/dashboard')
 @login_required
 def serve_dashboard_page():
+    if session.get('role') != 'admin':
+        return redirect(url_for('index'))
     return send_from_directory('.', 'dashboard.html')
 
 @app.route('/admin')

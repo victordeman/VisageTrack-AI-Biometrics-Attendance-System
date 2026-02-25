@@ -33,8 +33,9 @@ if (loginForm) {
       const data = await response.json();
       if (response.ok) {
         localStorage.setItem('jwt_token', data.access_token);
+        localStorage.setItem('user_role', data.role);
         alert('Logged in! Redirecting...');
-        window.location.href = role === 'admin' ? '/admin' : '/dashboard';
+        window.location.href = data.role === 'admin' ? '/admin' : '/attendance';
       } else {
         alert(data.message || 'Login failed');
       }

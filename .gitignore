@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+database.db
+encryption.key
+uploads/
+processed/
+*.log
+verification/

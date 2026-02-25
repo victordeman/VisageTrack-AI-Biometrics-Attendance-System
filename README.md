@@ -6,6 +6,10 @@
 
 - **Biometric Enrollment**: 
   - Effortless user registration with a 10-frame image capture process.
+  - Detailed employee profiles including:
+    - **Personal Info**: First/Last Name, Date of Birth, Email.
+    - **Professional Info**: Department, Job Designation.
+    - **Contact Info**: Home Address.
   - Built-in **Liveness Detection** to prevent spoofing using photos or videos.
 - **Face Recognition Attendance**:
   - Real-time clock-in via webcam.
@@ -15,6 +19,7 @@
   - **Secure Authentication**: JWT-based session management for secure API access.
   - **Password Hashing**: User passwords are securely hashed using Werkzeug.
 - **Admin Dashboard**:
+  - **Restricted Access**: Only users with the **Administrator** role can access the dashboard.
   - Comprehensive user management (Add/Delete users).
   - Real-time attendance logs and system statistics.
 - **Modern UI**:

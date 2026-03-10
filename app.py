@@ -2,7 +2,10 @@ from flask import Flask, request, jsonify, send_from_directory, redirect, url_fo
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 import sqlite3
 import numpy as np
-import face_recognition
+try:
+    import face_recognition
+except ImportError:
+    face_recognition = None
 import cv2
 from cryptography.fernet import Fernet
 import os
@@ -248,6 +251,9 @@ def api_enroll():
     logger.info(f"Saved enrollment image to {filepath}")
 
     # Process for recognition (generate embedding)
+    if face_recognition is None:
+        return jsonify({'message': 'Face recognition module not available on this server'}), 503
+
     try:
         frame = cv2.imread(filepath)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -278,6 +284,9 @@ def api_enroll():
 @app.route('/api/recognize', methods=['POST'])
 @jwt_required()
 def api_recognize():
+    if face_recognition is None:
+        return jsonify({'message': 'Face recognition module not available on this server'}), 503
+
     if 'image' not in request.files:
         return jsonify({'message': 'No image file'}), 400
 

@@ -26,25 +26,42 @@ app.config['JWT_TOKEN_LOCATION'] = ['headers']
 
 jwt = JWTManager(app)
 
+# Environment-specific configuration for Vercel (read-only filesystem)
+IS_VERCEL = os.environ.get('VERCEL') == '1'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = '/tmp' if IS_VERCEL else BASE_DIR
+
 # Ensure uploads directory exists
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = os.path.join(DATA_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Encryption key persistence
-KEY_FILE = 'encryption.key'
-if os.path.exists(KEY_FILE):
+# Priority: 1. Environment Variable (Recommended for Vercel), 2. Local File, 3. Generated
+env_key = os.environ.get('ENCRYPTION_KEY')
+KEY_FILE = os.path.join(DATA_DIR, 'encryption.key')
+
+if env_key:
+    key = env_key.encode()
+    logger.info("Using encryption key from environment variable.")
+elif os.path.exists(KEY_FILE):
     with open(KEY_FILE, 'rb') as f:
         key = f.read()
+    logger.info(f"Using encryption key from {KEY_FILE}")
 else:
     key = Fernet.generate_key()
-    with open(KEY_FILE, 'wb') as f:
-        f.write(key)
+    if not IS_VERCEL: # Only try to save if not on Vercel to avoid confusion
+        with open(KEY_FILE, 'wb') as f:
+            f.write(key)
+    logger.info("Generated new encryption key.")
+
 cipher = Fernet(key)
 
 # Database
+DB_PATH = os.path.join(DATA_DIR, 'database.db')
+
 @contextmanager
 def get_db():
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -420,9 +437,36 @@ def serve_admin_dashboard():
 
 @app.route('/<path:path>')
 def static_files(path):
-    if os.path.exists(path):
-        return send_from_directory('.', path)
-    return send_from_directory('.', 'index.html')
+    # Security: Define allowed extensions and folders
+    ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json'}
+    ALLOWED_FOLDERS = {'components', 'uploads'}
+
+    # 1. Check if it's a direct file in BASE_DIR with allowed extension
+    ext = os.path.splitext(path)[1].lower()
+
+    # Special case for index.html at root
+    if path == '' or path == '/':
+        return send_from_directory(BASE_DIR, 'index.html')
+
+    # 2. Check if the file is in an allowed folder or is an allowed top-level file
+    is_in_allowed_folder = any(path.startswith(f + '/') for f in ALLOWED_FOLDERS)
+    is_allowed_top_level = '/' not in path and ext in ALLOWED_EXTENSIONS
+
+    if (is_in_allowed_folder or is_allowed_top_level) and ext in ALLOWED_EXTENSIONS:
+        # Check if it's an upload
+        if path.startswith('uploads/'):
+            filename = path.replace('uploads/', '', 1)
+            upload_path = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.exists(upload_path) and os.path.isfile(upload_path):
+                return send_from_directory(UPLOAD_FOLDER, filename)
+
+        # Check in BASE_DIR
+        full_path = os.path.join(BASE_DIR, path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            return send_from_directory(BASE_DIR, path)
+
+    # Default to index.html for SPA-like behavior or if file not found
+    return send_from_directory(BASE_DIR, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

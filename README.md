@@ -67,6 +67,18 @@ pip install -r requirements.txt
    ```
 3. **Access the App**: Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your web browser.
 
+## ☁️ Vercel Deployment
+
+This application is ready for deployment on [Vercel](https://vercel.com/).
+
+### Important Considerations for Serverless
+*   **Ephemeral Filesystem**: Serverless functions have a read-only filesystem except for the `/tmp` directory. Data stored in `/tmp` (SQLite DB and uploads) is **temporary** and will be lost when the function instance restarts.
+*   **Persistence**: For a production-ready system, you **must** migrate to a persistent database (e.g., PostgreSQL via Neon or Supabase) and external storage (e.g., AWS S3 or Vercel Blob).
+
+### Steps to Deploy
+1.  **Environment Variables**: Set the `ENCRYPTION_KEY` environment variable in Vercel to a stable base64 string (generate one with `Fernet.generate_key()`). This prevents data from becoming unreadable if the function restarts and generates a new key.
+2.  **Deployment**: Push this repository to GitHub and connect it to Vercel. Vercel will automatically detect the `vercel.json` and `requirements.txt`.
+
 ## 👤 Default Credentials
 
 - **Admin**: `admin@ex.com` / `pass123`

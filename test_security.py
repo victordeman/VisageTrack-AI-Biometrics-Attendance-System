@@ -10,24 +10,24 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def static_files_logic(path):
     ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json'}
     ALLOWED_FOLDERS = {'components', 'uploads'}
-
+    
     ext = os.path.splitext(path)[1].lower()
-
+    
     if path == '' or path == '/':
         return "index.html"
 
     is_in_allowed_folder = any(path.startswith(f + '/') for f in ALLOWED_FOLDERS)
     is_allowed_top_level = '/' not in path and ext in ALLOWED_EXTENSIONS
-
+    
     if (is_in_allowed_folder or is_allowed_top_level) and ext in ALLOWED_EXTENSIONS:
         if path.startswith('uploads/'):
             filename = path.replace('uploads/', '', 1)
             upload_path = os.path.join(UPLOAD_FOLDER, filename)
             return f"serving from uploads: {filename}"
-
+        
         full_path = os.path.join(BASE_DIR, path)
         return f"serving from base: {path}"
-
+        
     return "index.html (default)"
 
 # Test cases

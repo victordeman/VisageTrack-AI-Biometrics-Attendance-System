@@ -79,6 +79,15 @@ This application is ready for deployment on [Vercel](https://vercel.com/).
 1.  **Environment Variables**: Set the `ENCRYPTION_KEY` environment variable in Vercel to a stable base64 string (generate one with `Fernet.generate_key()`). This prevents data from becoming unreadable if the function restarts and generates a new key.
 2.  **Deployment**: Push this repository to GitHub and connect it to Vercel. Vercel will automatically detect the `vercel.json` and `requirements.txt`.
 
+### Troubleshooting `dlib` Build Failures
+`face_recognition` depends on `dlib`, which can be difficult to build in constrained environments like Vercel (due to memory limits or missing C++ compilers).
+*   **Memory Issues**: If the build fails with an "Out of Memory" or "Killed" error, Vercel's standard build environment may not be sufficient.
+*   **Alternative Platforms**: If you encounter persistent `dlib` build issues on Vercel, we recommend deploying using **Docker** on platforms like:
+    *   **AWS App Runner**
+    *   **Google Cloud Run**
+    *   **Railway** (using their Docker support)
+    *   **DigitalOcean App Platform**
+
 ## 👤 Default Credentials
 
 - **Admin**: `admin@ex.com` / `pass123`

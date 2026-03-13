@@ -230,7 +230,16 @@
                     body: formData
                 });
 
-                const data = await response.json();
+                let data;
+                const text = await response.text();
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    console.error('Error parsing JSON response:', parseErr);
+                    console.error('Raw response:', text);
+                    throw new Error(response.status === 405 ? 'Method Not Allowed. Check server configuration.' : 'Invalid response from server.');
+                }
+
                 if (response.ok) {
                     statusText.textContent = 'Enrollment successful! Redirecting...';
                     statusText.className = 'text-emerald-600 font-bold';
@@ -247,10 +256,12 @@
                 }
             } catch (err) {
                 console.error("Enrollment error:", err);
-                statusText.textContent = 'Server error. Please try again later.';
+                statusText.textContent = err.message || 'Server error. Please try again later.';
                 statusText.className = 'text-red-600 font-bold';
                 enrollBtn.disabled = false;
                 enrollBtn.classList.remove('opacity-50');
+                enrollBtn.innerHTML = '<i data-feather="user-plus" class="w-5 h-5"></i> Start Enrollment';
+                feather.replace();
             }
         }
 

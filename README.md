@@ -2,7 +2,7 @@
 
 
 **VisageTrack-AI-Biometrics-Attendance-System
-** is a touchless, secure, and efficient biometric attendance tracking system. Leveraging advanced facial recognition technology, it provides a seamless way for organizations to manage attendance while ensuring data privacy and security.
+** is a touchless, secure, and efficient biometric attendance tracking system. Leveraging advanced facial recognition technology, it provides a seamless way for organizations to manage attendance while ensuring data privacy and security. Check it out here https://visage-livid.vercel.app/index.html
 
 ## 🚀 Features
 

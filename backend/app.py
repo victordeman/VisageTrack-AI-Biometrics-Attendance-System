@@ -1,5 +1,6 @@
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, session
+from flask import Flask, request, jsonify, session, send_from_directory
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from flask_cors import CORS
 import sqlite3
 import numpy as np
 try:
@@ -20,7 +21,8 @@ from werkzeug.exceptions import HTTPException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__)
+CORS(app, supports_credentials=True)
 
 # Configuration
 app.config['SECRET_KEY'] = 'visage-track-2026-super-secure-key-32bytes'
@@ -29,9 +31,10 @@ app.config['JWT_TOKEN_LOCATION'] = ['headers']
 
 jwt = JWTManager(app)
 
-# Environment-specific configuration for Vercel (read-only filesystem)
+# Environment-specific configuration
 IS_VERCEL = os.environ.get('VERCEL') == '1'
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# BASE_DIR should point to the root where uploads/ and database.db are
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = '/tmp' if IS_VERCEL else BASE_DIR
 
 # Ensure uploads directory exists
@@ -39,7 +42,6 @@ UPLOAD_FOLDER = os.path.join(DATA_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Encryption key persistence
-# Priority: 1. Environment Variable (Recommended for Vercel), 2. Local File, 3. Generated
 env_key = os.environ.get('ENCRYPTION_KEY')
 KEY_FILE = os.path.join(DATA_DIR, 'encryption.key')
 
@@ -52,7 +54,7 @@ elif os.path.exists(KEY_FILE):
     logger.info(f"Using encryption key from {KEY_FILE}")
 else:
     key = Fernet.generate_key()
-    if not IS_VERCEL: # Only try to save if not on Vercel to avoid confusion
+    if not IS_VERCEL:
         with open(KEY_FILE, 'wb') as f:
             f.write(key)
     logger.info("Generated new encryption key.")
@@ -96,7 +98,7 @@ def init_db():
             status TEXT
         )''')
         
-        # Check if new columns exist (simple migration)
+        # Check if new columns exist
         c.execute("PRAGMA table_info(users)")
         columns = [column[1] for column in c.fetchall()]
         cols_to_add = {
@@ -112,13 +114,13 @@ def init_db():
             if col not in columns:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
 
-        # Add default admin if not exists
+        # Add default admin
         c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
         if not c.fetchone():
             c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", 
                       ('Admin', 'admin@ex.com', generate_password_hash('pass123'), 'admin'))
         
-        # Add default employee if not exists
+        # Add default employee
         c.execute("SELECT * FROM users WHERE email = ?", ('employee@ex.com',))
         if not c.fetchone():
             c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", 
@@ -136,15 +138,6 @@ def encode_embedding(embedding):
 def decode_embedding(encrypted):
     return np.frombuffer(cipher.decrypt(encrypted), dtype=np.float64)
 
-# Session decorator for HTML pages
-def login_required(view):
-    @functools.wraps(view)
-    def wrapped_view(**kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('index'))
-        return view(**kwargs)
-    return wrapped_view
-
 # JWT Error Handlers
 @jwt.unauthorized_loader
 def unauthorized_response(callback):
@@ -161,7 +154,6 @@ def log_request_info():
 
 @app.errorhandler(Exception)
 def handle_error(e):
-    # Pass through HTTP errors
     if isinstance(e, HTTPException):
         return e
     
@@ -170,13 +162,12 @@ def handle_error(e):
 
 # ====================== API ROUTES ======================
 
-@app.route('/favicon.ico')
-def favicon():
-    return '', 204
+@app.route('/uploads/<path:filename>')
+def serve_uploads(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
-    session.clear()
     return jsonify({'message': 'Logged out successfully'}), 200
 
 @app.route('/api/login', methods=['POST'])
@@ -196,9 +187,7 @@ def api_login():
         user = c.fetchone()
 
     if user and check_password_hash(user['password'], password):
-        session['user_id'] = user['id']
-        session['role'] = user['role']
-        token = create_access_token(identity=str(user['id']))
+        token = create_access_token(identity=str(user['id']), additional_claims={"role": user['role']})
         return jsonify({
             'message': 'Login successful',
             'access_token': token, 
@@ -206,6 +195,32 @@ def api_login():
         }), 200
     
     return jsonify({'message': 'Invalid credentials'}), 401
+
+@app.route('/api/user/profile', methods=['GET'])
+@jwt_required()
+def api_user_profile():
+    user_id = get_jwt_identity()
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, name, email, role FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+        return jsonify(dict(user)), 200
+
+@app.route('/api/user/stats', methods=['GET'])
+@jwt_required()
+def api_user_stats():
+    user_id = get_jwt_identity()
+    # Simple mock stats for the dashboard
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) as count FROM attendance WHERE user_id = ?", (user_id,))
+        present_count = c.fetchone()['count']
+        return jsonify({
+            'present': present_count,
+            'absent': 0 # For prototype simplicity
+        }), 200
 
 @app.route('/api/enroll', methods=['POST'])
 @jwt_required(optional=True)
@@ -223,7 +238,6 @@ def api_enroll():
     if not first_name or not last_name or not email:
         return jsonify({'message': 'First name, last name and email are required'}), 400
 
-    # Security check: only existing admins can create other admins
     if is_admin:
         current_user_id = get_jwt_identity()
         if not current_user_id:
@@ -238,19 +252,14 @@ def api_enroll():
 
     name = f"{first_name} {last_name}"
 
-    # Handle file storage
-    image_file = request.files.get('image1') # Just take the first one for simplicity
+    image_file = request.files.get('image1')
     if not image_file:
         return jsonify({'message': 'No image captured'}), 400
 
     filename = f"{uuid.uuid4()}_{image_file.filename}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    
-    # Save file to disk
     image_file.save(filepath)
-    logger.info(f"Saved enrollment image to {filepath}")
 
-    # Process for recognition (generate embedding)
     if face_recognition is None:
         return jsonify({'message': 'Face recognition module not available on this server'}), 503
 
@@ -364,7 +373,6 @@ def api_admin_attendance():
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (user['id'],))
         
         logs = [dict(row) for row in c.fetchall()]
-        logger.info(f"Retrieved {len(logs)} logs for user {user_id}")
         
     return jsonify({'message': 'Logs retrieved successfully', 'logs': logs}), 200
 
@@ -394,7 +402,6 @@ def api_admin_delete_user(target_user_id):
         if not user or user['role'] != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
 
-        # Delete user and their attendance
         c.execute("DELETE FROM attendance WHERE user_id = ?", (target_user_id,))
         c.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
         conn.commit()
@@ -414,68 +421,6 @@ def api_admin_delete_log(log_id):
         c.execute("DELETE FROM attendance WHERE id = ?", (log_id,))
         conn.commit()
     return jsonify({'message': f'Attendance log {log_id} deleted'}), 200
-
-# ====================== PAGE ROUTES ======================
-
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
-
-@app.route('/attendance')
-@login_required
-def serve_attendance_page():
-    return send_from_directory('.', 'attendance.html')
-
-@app.route('/enroll')
-def serve_enroll_page():
-    return send_from_directory('.', 'enroll.html')
-
-@app.route('/dashboard')
-@login_required
-def serve_dashboard_page():
-    if session.get('role') != 'admin':
-        return redirect(url_for('index'))
-    return send_from_directory('.', 'dashboard.html')
-
-@app.route('/admin')
-@login_required
-def serve_admin_dashboard():
-    if session.get('role') != 'admin':
-        return redirect(url_for('serve_dashboard_page'))
-    return send_from_directory('.', 'admin.html')
-
-@app.route('/<path:path>')
-def static_files(path):
-    # Security: Define allowed extensions and folders
-    ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json'}
-    ALLOWED_FOLDERS = {'components', 'uploads'}
-    
-    # 1. Check if it's a direct file in BASE_DIR with allowed extension
-    ext = os.path.splitext(path)[1].lower()
-    
-    # Special case for index.html at root
-    if path == '' or path == '/':
-        return send_from_directory(BASE_DIR, 'index.html')
-
-    # 2. Check if the file is in an allowed folder or is an allowed top-level file
-    is_in_allowed_folder = any(path.startswith(f + '/') for f in ALLOWED_FOLDERS)
-    is_allowed_top_level = '/' not in path and ext in ALLOWED_EXTENSIONS
-    
-    if (is_in_allowed_folder or is_allowed_top_level) and ext in ALLOWED_EXTENSIONS:
-        # Check if it's an upload
-        if path.startswith('uploads/'):
-            filename = path.replace('uploads/', '', 1)
-            upload_path = os.path.join(UPLOAD_FOLDER, filename)
-            if os.path.exists(upload_path) and os.path.isfile(upload_path):
-                return send_from_directory(UPLOAD_FOLDER, filename)
-        
-        # Check in BASE_DIR
-        full_path = os.path.join(BASE_DIR, path)
-        if os.path.exists(full_path) and os.path.isfile(full_path):
-            return send_from_directory(BASE_DIR, path)
-        
-    # Default to index.html for SPA-like behavior or if file not found
-    return send_from_directory(BASE_DIR, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

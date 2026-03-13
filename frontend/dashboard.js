@@ -5,7 +5,8 @@
  */
 class DashboardJS {
     constructor(options = {}) {
-        this.mode = options.mode || 'async'; // 'sync' or 'async'
+        this.apiURL = options.apiURL || ''; // Base API URL
+        this.mode = options.mode || 'async';
         this.data = options.data || null;
         this.pollInterval = options.pollInterval || 5000;
         this.containers = {
@@ -31,9 +32,9 @@ class DashboardJS {
     async refresh() {
         try {
             const [profile, stats, logs] = await Promise.all([
-                this.fetchData('/api/user/profile'),
-                this.fetchData('/api/user/stats'),
-                this.fetchData('/api/logs')
+                this.fetchData(`${this.apiURL}/api/user/profile`),
+                this.fetchData(`${this.apiURL}/api/user/stats`),
+                this.fetchData(`${this.apiURL}/api/logs`)
             ]);
 
             this.render({ profile, stats, logs });

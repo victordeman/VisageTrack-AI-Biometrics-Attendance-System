@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Dashboard - VisageTrack AI</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            900: '#4c1d95',
+                        },
+                        secondary: {
+                            500: '#06b6d4',
+                            600: '#0891b2',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-300">
+    <custom-navbar></custom-navbar>
+
+    <main class="max-w-7xl mx-auto p-8 w-full">
+        <div class="mb-10 text-center lg:text-left">
+            <h1 id="user-name" class="text-4xl font-bold text-slate-900 dark:text-white mb-2">Welcome</h1>
+            <p id="user-role" class="text-lg text-slate-500 font-medium uppercase tracking-wider">Employee Dashboard</p>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            <div class="card p-6 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center">
+                    <i data-feather="check-circle"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">Days Present</p>
+                    <p id="stat-present" class="text-2xl font-bold">0</p>
+                </div>
+            </div>
+            <div class="card p-6 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-600 flex items-center justify-center">
+                    <i data-feather="x-circle"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-slate-500 font-medium">Days Absent</p>
+                    <p id="stat-absent" class="text-2xl font-bold">0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-3 gap-8">
+            <!-- Quick Actions -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="card p-8">
+                    <h2 class="text-2xl font-bold mb-6">Quick Actions</h2>
+                    <div class="space-y-4">
+                        <a href="./attendance.html" class="flex items-center gap-3 p-4 rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition shadow-lg">
+                            <i data-feather="camera"></i>
+                            <span class="font-semibold">Clock In Now</span>
+                        </a>
+                        <a href="./enroll.html" class="flex items-center gap-3 p-4 rounded-xl border-2 border-primary-600 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition">
+                            <i data-feather="user-plus"></i>
+                            <span class="font-semibold">Update Face Data</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance History -->
+            <div class="lg:col-span-2">
+                <div class="card p-8">
+                    <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+                        <i data-feather="history" class="text-primary-600"></i>
+                        Attendance History
+                    </h2>
+                    <div id="logs" class="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                        <p class="text-center text-slate-400 py-4">Loading your records...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="components/navbar.js"></script>
+    <script src="script.js"></script>
+    <script src="dashboard.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const dashboard = new DashboardJS({
+                apiURL: window.API_URL || ''
+            });
+            dashboard.init();
+        });
+    </script>
+</body>
+</html>

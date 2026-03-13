@@ -163,8 +163,8 @@
             const homeAddress = document.getElementById('home_address').value;
             const dob = document.getElementById('dob').value;
             const department = document.getElementById('department').value;
-            const jobDesignation = document.getElementById('job_designation').value;
-            const isAdmin = document.getElementById('is_admin').checked;
+            const job_designation = document.getElementById('job_designation').value;
+            const is_admin = document.getElementById('is_admin').checked;
 
             if (!firstName || !lastName || !email) {
                 alert('Please fill in first name, last name and email first.');
@@ -209,8 +209,8 @@
             formData.append('home_address', homeAddress);
             formData.append('dob', dob);
             formData.append('department', department);
-            formData.append('job_designation', jobDesignation);
-            formData.append('is_admin', isAdmin);
+            formData.append('job_designation', job_designation);
+            formData.append('is_admin', is_admin);
             
             images.forEach((blob, i) => {
                 formData.append(`image${i+1}`, blob, `face_${i+1}.jpg`);
@@ -223,7 +223,8 @@
                     headers['Authorization'] = `Bearer ${token}`;
                 }
 
-                const response = await fetch('/api/enroll', {
+                const API_URL = window.API_URL || '';
+                const response = await fetch(`${API_URL}/api/enroll`, {
                     method: 'POST',
                     headers: headers,
                     body: formData
@@ -235,7 +236,7 @@
                     statusText.className = 'text-emerald-600 font-bold';
                     enrollBtn.innerHTML = '<i data-feather="check" class="w-5 h-5"></i> Done!';
                     feather.replace();
-                    setTimeout(() => window.location.href = '/dashboard', 2000);
+                    setTimeout(() => window.location.href = './dashboard.html', 2000);
                 } else {
                     statusText.textContent = data.message || 'Enrollment failed';
                     statusText.className = 'text-red-600 font-bold';

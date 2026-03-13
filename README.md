@@ -54,18 +54,36 @@ source venv/bin/activate
 
 ### 3. Install Dependencies
 ```bash
+cd backend
+
+# If on Linux/macOS and dlib installation fails via pip/uv, use the patch script:
+chmod +x install_dlib.sh
+./install_dlib.sh
+
+# Then install the remaining dependencies
 pip install -r requirements.txt
 ```
-*Note: Windows users may need to install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) for `dlib` compilation.*
+*Note: Windows users may need to install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) for `dlib` compilation. The `install_dlib.sh` script is specifically for Linux/macOS environments experiencing CMake version conflicts with dlib's bundled pybind11.*
 
 ## 🚀 Running the Application
 
-1. **Initialize the Database**: The database is automatically initialized upon the first run.
-2. **Start the Server**:
-   ```bash
-   python app.py
-   ```
-3. **Access the App**: Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your web browser.
+The system is split into a **Backend API** and a **Frontend**.
+
+### 1. Start the Backend API
+```bash
+cd backend
+python app.py
+```
+
+### 2. Host the Frontend
+You can host the `frontend` directory using any static file server. For development:
+```bash
+cd frontend
+python -m http.server 8000
+```
+
+### 3. Access the App
+Open [http://localhost:8000](http://localhost:8000) in your web browser.
 
 ## ☁️ Vercel Deployment
 
@@ -95,15 +113,14 @@ This application is ready for deployment on [Vercel](https://vercel.com/).
 
 ## 📁 Project Structure
 
-- `app.py`: Main Flask backend handling API routes and biometric processing.
-- `script.js`: Modular frontend logic for camera handling, API calls, and UI updates.
-- `index.html`: Login and landing page.
-- `dashboard.html`: Employee portal for viewing attendance logs.
-- `attendance.html`: Public clock-in interface.
-- `enroll.html`: User registration and biometric capture interface.
-- `admin.html`: Administrative management dashboard.
-- `components/`: Reusable frontend components (e.g., Navbar).
-- `requirements.txt`: Project dependencies.
+- `backend/app.py`: Main Flask backend handling API routes and biometric processing.
+- `frontend/script.js`: Modular frontend logic for camera handling, API calls, and UI updates.
+- `frontend/index.html`: Login and landing page.
+- `frontend/dashboard.html`: Employee portal for viewing attendance logs.
+- `frontend/attendance.html`: Public clock-in interface.
+- `frontend/enroll.html`: User registration and biometric capture interface.
+- `frontend/admin.html`: Administrative management dashboard.
+- `frontend/components/`: Reusable frontend components (e.g., Navbar).
 
 ## 🔒 Security Note
 

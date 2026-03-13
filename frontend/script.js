@@ -1,3 +1,6 @@
+// Initialize API URL - empty string for relative paths if on same domain, or specify your backend URL
+window.API_URL = ''; // e.g., 'http://localhost:5000'
+
 // Initialize Feather icons
 feather.replace();
 
@@ -20,12 +23,13 @@ const loginForm = document.getElementById('login-form');
 if (loginForm) {
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const role = document.querySelector('input[name="role"]:checked').value;
+    const roleInput = document.querySelector('input[name="role"]:checked');
+    const role = roleInput ? roleInput.value : 'employee';
     const email = loginForm.querySelector('input[type="text"]').value;
     const password = loginForm.querySelector('input[type="password"]').value;
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(`${window.API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, role })
@@ -34,13 +38,13 @@ if (loginForm) {
       if (response.ok) {
         localStorage.setItem('jwt_token', data.access_token);
         localStorage.setItem('user_role', data.role);
-        alert('Logged in! Redirecting...');
-        window.location.href = data.role === 'admin' ? '/admin' : '/attendance';
+        alert('Login successful!');
+        window.location.href = data.role === 'admin' ? './admin.html' : './attendance.html';
       } else {
         alert(data.message || 'Login failed');
       }
     } catch (err) {
-      alert('Error logging in');
+      alert('Error connecting to backend API. Please ensure the server is running.');
       console.error(err);
     }
   });
@@ -70,7 +74,7 @@ async function recordAttendance(video, status, clockInBtn) {
   formData.append('image', blob, 'capture.jpg');
 
   try {
-    const response = await fetch('/api/recognize', {
+    const response = await fetch(`${window.API_URL}/api/recognize`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: formData
@@ -85,7 +89,7 @@ async function recordAttendance(video, status, clockInBtn) {
       clockInBtn.disabled = false;
     }
   } catch (err) {
-    status.textContent = 'Error connecting to server. Try again.';
+    status.textContent = 'Error connecting to API server. Try again.';
     clockInBtn.disabled = false;
     console.error(err);
   }
@@ -116,10 +120,10 @@ if (clockInBtn) {
 
 // Fetch and display logs (on admin or dashboard pages)
 const logsContainer = document.getElementById('logs');
-if (logsContainer) {
+if (logsContainer && !window.location.pathname.includes('dashboard.html')) {
   async function fetchLogs() {
     try {
-      const response = await fetch('/api/logs', {
+      const response = await fetch(`${window.API_URL}/api/logs`, {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -135,7 +139,9 @@ if (logsContainer) {
         `).join('') || '<p class="text-center text-slate-500 py-8">No attendance logs found yet.</p>';
       } else if (response.status === 401 || response.status === 422) {
         localStorage.removeItem('jwt_token');
-        if (window.location.pathname !== '/') window.location.href = '/';
+        if (window.location.pathname.indexOf('index.html') === -1 && window.location.pathname !== '/') {
+            window.location.href = './index.html';
+        }
       }
     } catch (err) {
       console.error('Error fetching logs:', err);
@@ -144,7 +150,76 @@ if (logsContainer) {
   fetchLogs();
 }
 
-// Enroll Face (on enroll.html) - Moved to inline script in enroll.html for page-specific logic
+// Admin Dashboard Functions
+async function loadAdminDashboard() {
+    const statsUsers = document.getElementById('stat-users');
+    const statsLogs = document.getElementById('stat-logs');
+    const userTableBody = document.getElementById('user-table-body');
 
-// Remove face-api promise to avoid load error (optional library not used in core logic)
-console.log('Ready to record attendance with your face. Face-api not loaded due to CDN issues.');
+    try {
+        const [statsRes, usersRes] = await Promise.all([
+            fetch(`${window.API_URL}/api/admin/stats`, { headers: getAuthHeaders() }),
+            fetch(`${window.API_URL}/api/admin/users`, { headers: getAuthHeaders() })
+        ]);
+
+        if (statsRes.ok) {
+            const stats = await statsRes.json();
+            if (statsUsers) statsUsers.textContent = stats.user_count;
+            if (statsLogs) statsLogs.textContent = stats.log_count;
+        }
+
+        if (usersRes.ok) {
+            const usersData = await usersRes.json();
+            if (userTableBody) {
+                userTableBody.innerHTML = usersData.users.map(user => `
+                    <tr class="group">
+                        <td class="py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center font-bold text-primary-600">
+                                    ${user.name.charAt(0)}
+                                </div>
+                                <div>
+                                    <p class="font-semibold">${user.name}</p>
+                                    <p class="text-xs text-slate-500">${user.email}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="py-4">
+                            <span class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-medium uppercase">${user.role}</span>
+                        </td>
+                        <td class="py-4">
+                            <button onclick="deleteUser(${user.id})" class="p-2 text-slate-400 hover:text-red-600 transition">
+                                <i data-feather="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+                feather.replace();
+            }
+        }
+    } catch (err) {
+        console.error("Failed to load admin dashboard:", err);
+    }
+}
+
+async function deleteUser(id) {
+    if (!confirm('Are you sure you want to delete this user and all their records?')) return;
+    try {
+        const response = await fetch(`${window.API_URL}/api/admin/users/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (response.ok) {
+            loadAdminDashboard();
+        } else {
+            alert('Failed to delete user');
+        }
+    } catch (err) {
+        console.error("Delete user error:", err);
+    }
+}
+
+window.loadAdminDashboard = loadAdminDashboard;
+window.deleteUser = deleteUser;
+
+console.log('Frontend initialized. API Server:', window.API_URL || 'Local relative');

@@ -71,8 +71,8 @@ The system is split into a **Backend API** and a **Frontend**.
 
 ### 1. Start the Backend API
 ```bash
-cd backend
-python app.py
+cd api
+python index.py
 ```
 
 ### 2. Host the Frontend
@@ -113,7 +113,7 @@ This application is ready for deployment on [Vercel](https://vercel.com/).
 
 ## 📁 Project Structure
 
-- `backend/app.py`: Main Flask backend handling API routes and biometric processing.
+- `api/index.py`: Main Flask backend handling API routes and biometric processing.
 - `frontend/script.js`: Modular frontend logic for camera handling, API calls, and UI updates.
 - `frontend/index.html`: Login and landing page.
 - `frontend/dashboard.html`: Employee portal for viewing attendance logs.

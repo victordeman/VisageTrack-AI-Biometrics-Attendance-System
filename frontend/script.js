@@ -79,7 +79,17 @@ async function recordAttendance(video, status, clockInBtn) {
       headers: getAuthHeaders(),
       body: formData
     });
-    const data = await response.json();
+
+    let data;
+    const text = await response.text();
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      console.error('Error parsing JSON response:', parseErr);
+      console.error('Raw response:', text);
+      throw new Error(response.status === 405 ? 'Method Not Allowed. Check server configuration.' : 'Invalid response from server.');
+    }
+
     const message = data.message || (response.ok ? 'Success!' : 'Unknown error');
     status.innerHTML = response.ok ? `<span class="text-emerald-600 font-bold">${message}</span>` : `<span class="text-red-600">${message}</span>`;
     if (response.ok) {
@@ -89,7 +99,7 @@ async function recordAttendance(video, status, clockInBtn) {
       clockInBtn.disabled = false;
     }
   } catch (err) {
-    status.textContent = 'Error connecting to API server. Try again.';
+    status.textContent = err.message || 'Error connecting to API server. Try again.';
     clockInBtn.disabled = false;
     console.error(err);
   }

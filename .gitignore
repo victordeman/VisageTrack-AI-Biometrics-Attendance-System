@@ -5,4 +5,5 @@ encryption.key
 uploads/
 processed/
 *.log
+api/dlib-*/
 verification/

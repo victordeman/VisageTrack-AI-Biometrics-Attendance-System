@@ -37,10 +37,19 @@
 
 ## ⚙️ Installation
 
+### 0. Prerequisites
+The system requires several tools to be installed on your machine for the biometric components (`dlib`) to build correctly:
+- **Python 3.10+**
+- **CMake**: Used to build the C++ core of dlib.
+- **C++ Compiler**:
+  - **Linux**: `gcc`/`g++` (usually via `build-essential`)
+  - **macOS**: Clang (via Xcode Command Line Tools)
+  - **Windows**: Visual Studio Build Tools with "Desktop development with C++" workload.
+
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/victordeman/VisageTrack-AI-Biometrics-Attendance-System.git
-cd Face-Capture-System
+cd VisageTrack-AI-Biometrics-Attendance-System
 ```
 
 ### 2. Set Up a Virtual Environment
@@ -62,8 +71,11 @@ chmod +x install_dlib.sh
 
 # Then install the remaining dependencies
 pip install -r requirements.txt
+
+# (Optional) Verify your environment
+python verify_env.py
 ```
-*Note: Windows users may need to install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) for `dlib` compilation. The `install_dlib.sh` script is specifically for Linux/macOS environments experiencing CMake version conflicts with dlib's bundled pybind11.*
+*Note: The `install_dlib.sh` script is specifically for Linux/macOS environments experiencing CMake version conflicts with dlib's bundled pybind11. It automates downloading and patching the source before installation.*
 
 ## 🚀 Running the Application
 
@@ -121,6 +133,22 @@ This application is ready for deployment on [Vercel](https://vercel.com/).
 - `frontend/enroll.html`: User registration and biometric capture interface.
 - `frontend/admin.html`: Administrative management dashboard.
 - `frontend/components/`: Reusable frontend components (e.g., Navbar).
+
+## 🛠️ Troubleshooting
+
+### "cmake not found" or "not in PATH"
+This is a common issue on Windows. Ensure that you selected the option to **"Add CMake to the system PATH"** during installation. If you've already installed it, you may need to add it manually:
+1. Search for "Edit the system environment variables" in Windows search.
+2. Click "Environment Variables".
+3. Under "System variables", select "Path" and click "Edit".
+4. Add the path to your CMake bin directory (e.g., `C:\Program Files\CMake\bin`).
+5. Restart your terminal.
+
+### "No module named 'face_recognition'"
+Ensure you have activated your virtual environment before running the application. If you just installed dependencies, try restarting your terminal.
+
+### dlib installation fails on Linux/macOS
+Ensure you have run `./install_dlib.sh` inside the `api/` directory. This script handles the necessary patches for modern CMake compatibility.
 
 ## 🔒 Security Note
 

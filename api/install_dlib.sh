@@ -2,7 +2,7 @@
 # install_dlib.sh - A portable script to install dlib with a fix for modern CMake (3.28+)
 set -e
 
-DLIB_VERSION="19.24.2"
+DLIB_VERSION="19.24.9"
 DLIB_DIR="dlib-${DLIB_VERSION}"
 
 # Determine portable sed -i command

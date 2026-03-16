@@ -41,7 +41,7 @@
 The system requires several tools to be installed on your machine for the biometric components (`dlib`) to build correctly:
 - **Python 3.10+**
 - **CMake**: Used to build the C++ core of dlib.
-- **C++ Compiler**:
+- **C++ Compiler**: 
   - **Linux**: `gcc`/`g++` (usually via `build-essential`)
   - **macOS**: Clang (via Xcode Command Line Tools)
   - **Windows**: Visual Studio Build Tools with "Desktop development with C++" workload.

@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cryptography==41.0.7",
-    "dlib==19.24.9",
+    "dlib",
+    "dlib-bin",
     "face-recognition==1.3.0",
     "flask==3.0.0",
     "flask-cors==5.0.0",
@@ -17,3 +18,6 @@ dependencies = [
     "setuptools<70",
     "werkzeug==3.0.1",
 ]
+
+[tool.uv.sources]
+dlib = { path = "libs/dlib" }

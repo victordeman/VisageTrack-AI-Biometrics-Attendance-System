@@ -3,17 +3,6 @@ from flask_jwt_extended import JWTManager, jwt_required, create_access_token, ge
 from flask_cors import CORS
 import sqlite3
 import numpy as np
-try:
-    import face_recognition
-except Exception as e:
-    print(f"Error importing face_recognition: {e}")
-    face_recognition = None
-
-try:
-    import cv2
-except Exception as e:
-    print(f"Error importing cv2: {e}")
-    cv2 = None
 from cryptography.fernet import Fernet
 import os
 import functools
@@ -26,6 +15,30 @@ from werkzeug.exceptions import HTTPException
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Lazy loading of heavy modules
+_face_recognition = None
+_cv2 = None
+
+def get_face_recognition():
+    global _face_recognition
+    if _face_recognition is None:
+        try:
+            import face_recognition
+            _face_recognition = face_recognition
+        except Exception as e:
+            logger.error(f"Error importing face_recognition: {e}")
+    return _face_recognition
+
+def get_cv2():
+    global _cv2
+    if _cv2 is None:
+        try:
+            import cv2
+            _cv2 = cv2
+        except Exception as e:
+            logger.error(f"Error importing cv2: {e}")
+    return _cv2
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -146,7 +159,13 @@ def init_db():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
 
-init_db()
+_db_initialized = False
+
+def ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        init_db()
+        _db_initialized = True
 
 # Helpers
 def encode_embedding(embedding):
@@ -165,7 +184,8 @@ def invalid_token_response(callback):
     return jsonify({'message': 'Invalid Token', 'details': str(callback)}), 422
 
 @app.before_request
-def log_request_info():
+def setup_app():
+    ensure_db_initialized()
     if request.path.startswith('/api/'):
         logger.info(f"API Request: {request.method} {request.path}")
 
@@ -179,13 +199,44 @@ def handle_error(e):
 
 # ====================== API ROUTES ======================
 
+@app.route('/api/ping', methods=['GET'])
+def api_ping():
+    return jsonify({'message': 'pong'}), 200
+
+@app.route('/api/diag', methods=['GET'])
+def api_diag():
+    import platform
+    import sys
+
+    diag_info = {
+        'python_version': sys.version,
+        'platform': platform.platform(),
+        'os_name': os.name,
+        'is_vercel': IS_VERCEL,
+        'data_dir': DATA_DIR,
+        'modules_available': {
+            'face_recognition': get_face_recognition() is not None,
+            'cv2': get_cv2() is not None
+        }
+    }
+
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            diag_info['meminfo'] = [next(f) for _ in range(5)]
+    except:
+        pass
+
+    return jsonify(diag_info), 200
+
 @app.route('/api/health', methods=['GET'])
 def api_health():
+    fr = get_face_recognition()
+    cv = get_cv2()
     return jsonify({
         'status': 'healthy',
         'modules': {
-            'face_recognition': face_recognition is not None,
-            'cv2': cv2 is not None,
+            'face_recognition': fr is not None,
+            'cv2': cv is not None,
             'sqlite3': True
         },
         'environment': {
@@ -292,17 +343,19 @@ def api_enroll():
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     image_file.save(filepath)
 
-    if face_recognition is None:
-        return jsonify({'message': 'Face recognition module not available on this server'}), 503
+    fr = get_face_recognition()
+    cv = get_cv2()
+    if fr is None or cv is None:
+        return jsonify({'message': 'Biometric modules not available on this server'}), 503
 
     try:
-        frame = cv2.imread(filepath)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        locations = face_recognition.face_locations(rgb)
+        frame = cv.imread(filepath)
+        rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+        locations = fr.face_locations(rgb)
         if not locations:
             return jsonify({'message': 'No face detected in the image'}), 400
         
-        embedding = face_recognition.face_encodings(rgb, locations)[0]
+        embedding = fr.face_encodings(rgb, locations)[0]
         encrypted_embedding = encode_embedding(embedding)
     except Exception as e:
         logger.error(f"Error processing face: {e}")
@@ -325,8 +378,10 @@ def api_enroll():
 @app.route('/api/recognize', methods=['POST'])
 @jwt_required()
 def api_recognize():
-    if face_recognition is None:
-        return jsonify({'message': 'Face recognition module not available on this server'}), 503
+    fr = get_face_recognition()
+    cv = get_cv2()
+    if fr is None or cv is None:
+        return jsonify({'message': 'Biometric modules not available on this server'}), 503
 
     if 'image' not in request.files:
         return jsonify({'message': 'No image file'}), 400
@@ -334,17 +389,17 @@ def api_recognize():
     image_file = request.files['image']
     file_bytes = image_file.read()
     nparr = np.frombuffer(file_bytes, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    frame = cv.imdecode(nparr, cv.IMREAD_COLOR)
     
     if frame is None:
         return jsonify({'message': 'Invalid image'}), 400
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    locations = face_recognition.face_locations(rgb)
+    rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+    locations = fr.face_locations(rgb)
     if not locations:
         return jsonify({'message': 'No face detected'}), 400
 
-    new_embedding = face_recognition.face_encodings(rgb, locations)[0]
+    new_embedding = fr.face_encodings(rgb, locations)[0]
 
     with get_db() as conn:
         c = conn.cursor()
@@ -354,7 +409,7 @@ def api_recognize():
         for user in users:
             try:
                 stored = decode_embedding(user['embedding'])
-                distance = face_recognition.face_distance([stored], new_embedding)[0]
+                distance = fr.face_distance([stored], new_embedding)[0]
                 if distance < 0.6:
                     c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
                     conn.commit()

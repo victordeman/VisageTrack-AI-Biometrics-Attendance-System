@@ -5,9 +5,15 @@ import sqlite3
 import numpy as np
 try:
     import face_recognition
-except ImportError:
+except Exception as e:
+    print(f"Error importing face_recognition: {e}")
     face_recognition = None
-import cv2
+
+try:
+    import cv2
+except Exception as e:
+    print(f"Error importing cv2: {e}")
+    cv2 = None
 from cryptography.fernet import Fernet
 import os
 import functools
@@ -74,60 +80,71 @@ def get_db():
         conn.close()
 
 def init_db():
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
+    logger.info(f"Initializing database at {DB_PATH}")
+    try:
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR, exist_ok=True)
+            logger.info(f"Created data directory: {DATA_DIR}")
+    except Exception as e:
+        logger.error(f"Failed to create data directory: {e}")
+
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             name TEXT, 
             email TEXT UNIQUE, 
             password TEXT, 
             role TEXT, 
-            embedding BLOB,
-            image_path TEXT,
-            first_name TEXT,
-            last_name TEXT,
-            home_address TEXT,
-            dob TEXT,
-            department TEXT,
-            job_designation TEXT
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            user_id INTEGER, 
-            timestamp TEXT, 
-            status TEXT
-        )''')
-        
-        # Check if new columns exist
-        c.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in c.fetchall()]
-        cols_to_add = {
-            'image_path': 'TEXT',
-            'first_name': 'TEXT',
-            'last_name': 'TEXT',
-            'home_address': 'TEXT',
-            'dob': 'TEXT',
-            'department': 'TEXT',
-            'job_designation': 'TEXT'
-        }
-        for col, col_type in cols_to_add.items():
-            if col not in columns:
-                c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+                    embedding BLOB,
+                    image_path TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    home_address TEXT,
+                    dob TEXT,
+                    department TEXT,
+                    job_designation TEXT
+                )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS attendance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    timestamp TEXT,
+                    status TEXT
+                )''')
 
-        # Add default admin
-        c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
-        if not c.fetchone():
-            c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", 
-                      ('Admin', 'admin@ex.com', generate_password_hash('pass123'), 'admin'))
-        
-        # Add default employee
-        c.execute("SELECT * FROM users WHERE email = ?", ('employee@ex.com',))
-        if not c.fetchone():
-            c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", 
-                      ('Employee', 'employee@ex.com', generate_password_hash('pass123'), 'employee'))
-        
-        conn.commit()
-        logger.info("Database initialized.")
+            # Check if new columns exist
+            c.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in c.fetchall()]
+            cols_to_add = {
+                'image_path': 'TEXT',
+                'first_name': 'TEXT',
+                'last_name': 'TEXT',
+                'home_address': 'TEXT',
+                'dob': 'TEXT',
+                'department': 'TEXT',
+                'job_designation': 'TEXT'
+            }
+            for col, col_type in cols_to_add.items():
+                if col not in columns:
+                    c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+
+            # Add default admin
+            c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
+            if not c.fetchone():
+                c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+                        ('Admin', 'admin@ex.com', generate_password_hash('pass123'), 'admin'))
+
+            # Add default employee
+            c.execute("SELECT * FROM users WHERE email = ?", ('employee@ex.com',))
+            if not c.fetchone():
+                c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+                        ('Employee', 'employee@ex.com', generate_password_hash('pass123'), 'employee'))
+
+            conn.commit()
+            logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
 
 init_db()
 
@@ -161,6 +178,21 @@ def handle_error(e):
     return jsonify({'message': 'An internal error occurred', 'error': str(e)}), 500
 
 # ====================== API ROUTES ======================
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    return jsonify({
+        'status': 'healthy',
+        'modules': {
+            'face_recognition': face_recognition is not None,
+            'cv2': cv2 is not None,
+            'sqlite3': True
+        },
+        'environment': {
+            'is_vercel': IS_VERCEL,
+            'data_dir': DATA_DIR
+        }
+    }), 200
 
 @app.route('/uploads/<path:filename>')
 def serve_uploads(filename):

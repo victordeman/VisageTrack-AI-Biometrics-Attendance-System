@@ -20,4 +20,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-dlib = { path = "libs/dlib" }
+dlib = { path = "api/libs/dlib" }

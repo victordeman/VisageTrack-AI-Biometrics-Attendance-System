@@ -2,8 +2,6 @@ from flask import Flask, request, jsonify, session, send_from_directory
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 from flask_cors import CORS
 import sqlite3
-import numpy as np
-from cryptography.fernet import Fernet
 import os
 import functools
 import logging
@@ -16,9 +14,12 @@ from werkzeug.exceptions import HTTPException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Lazy loading of heavy modules
+# Lazy loading of heavy/problematic modules
 _face_recognition = None
 _cv2 = None
+_numpy = None
+_fernet = None
+_cipher = None
 
 def get_face_recognition():
     global _face_recognition
@@ -40,6 +41,43 @@ def get_cv2():
             logger.error(f"Error importing cv2: {e}")
     return _cv2
 
+def get_numpy():
+    global _numpy
+    if _numpy is None:
+        import numpy
+        _numpy = numpy
+    return _numpy
+
+def get_cipher():
+    global _cipher, _fernet
+    if _cipher is None:
+        from cryptography.fernet import Fernet
+        _fernet = Fernet
+
+        env_key = os.environ.get('ENCRYPTION_KEY')
+        DATA_DIR = get_data_dir()
+        KEY_FILE = os.path.join(DATA_DIR, 'encryption.key')
+
+        if env_key:
+            key = env_key.encode()
+            logger.info("Using encryption key from environment variable.")
+        elif os.path.exists(KEY_FILE):
+            with open(KEY_FILE, 'rb') as f:
+                key = f.read()
+            logger.info(f"Using encryption key from {KEY_FILE}")
+        else:
+            key = Fernet.generate_key()
+            if not is_vercel():
+                try:
+                    with open(KEY_FILE, 'wb') as f:
+                        f.write(key)
+                except:
+                    pass
+            logger.info("Generated new encryption key.")
+
+        _cipher = Fernet(key)
+    return _cipher
+
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
@@ -51,41 +89,23 @@ app.config['JWT_TOKEN_LOCATION'] = ['headers']
 jwt = JWTManager(app)
 
 # Environment-specific configuration
-IS_VERCEL = os.environ.get('VERCEL') == '1'
-# BASE_DIR should point to the root where uploads/ and database.db are
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = '/tmp' if IS_VERCEL else BASE_DIR
+def is_vercel():
+    return os.environ.get('VERCEL') == '1' or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
 
-# Ensure uploads directory exists
-UPLOAD_FOLDER = os.path.join(DATA_DIR, 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def get_data_dir():
+    if is_vercel():
+        return '/tmp'
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Encryption key persistence
-env_key = os.environ.get('ENCRYPTION_KEY')
-KEY_FILE = os.path.join(DATA_DIR, 'encryption.key')
+def get_upload_folder():
+    return os.path.join(get_data_dir(), 'uploads')
 
-if env_key:
-    key = env_key.encode()
-    logger.info("Using encryption key from environment variable.")
-elif os.path.exists(KEY_FILE):
-    with open(KEY_FILE, 'rb') as f:
-        key = f.read()
-    logger.info(f"Using encryption key from {KEY_FILE}")
-else:
-    key = Fernet.generate_key()
-    if not IS_VERCEL:
-        with open(KEY_FILE, 'wb') as f:
-            f.write(key)
-    logger.info("Generated new encryption key.")
-
-cipher = Fernet(key)
-
-# Database
-DB_PATH = os.path.join(DATA_DIR, 'database.db')
+def get_db_path():
+    return os.path.join(get_data_dir(), 'database.db')
 
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -93,13 +113,21 @@ def get_db():
         conn.close()
 
 def init_db():
-    logger.info(f"Initializing database at {DB_PATH}")
+    db_path = get_db_path()
+    data_dir = get_data_dir()
+    upload_folder = get_upload_folder()
+
+    logger.info(f"Initializing database at {db_path}")
     try:
-        if not os.path.exists(DATA_DIR):
-            os.makedirs(DATA_DIR, exist_ok=True)
-            logger.info(f"Created data directory: {DATA_DIR}")
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir, exist_ok=True)
+            logger.info(f"Created data directory: {data_dir}")
+
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder, exist_ok=True)
+            logger.info(f"Created uploads directory: {upload_folder}")
     except Exception as e:
-        logger.error(f"Failed to create data directory: {e}")
+        logger.error(f"Failed to create directories: {e}")
 
     try:
         with get_db() as conn:
@@ -169,10 +197,11 @@ def ensure_db_initialized():
 
 # Helpers
 def encode_embedding(embedding):
-    return cipher.encrypt(embedding.tobytes())
+    return get_cipher().encrypt(embedding.tobytes())
 
 def decode_embedding(encrypted):
-    return np.frombuffer(cipher.decrypt(encrypted), dtype=np.float64)
+    np = get_numpy()
+    return np.frombuffer(get_cipher().decrypt(encrypted), dtype=np.float64)
 
 # JWT Error Handlers
 @jwt.unauthorized_loader
@@ -208,15 +237,18 @@ def api_diag():
     import platform
     import sys
 
+    # Don't trigger heavy imports unless explicitly requested via query param
+    check_heavy = request.args.get('heavy') == '1'
+
     diag_info = {
         'python_version': sys.version,
         'platform': platform.platform(),
         'os_name': os.name,
-        'is_vercel': IS_VERCEL,
-        'data_dir': DATA_DIR,
+        'is_vercel': is_vercel(),
+        'data_dir': get_data_dir(),
         'modules_available': {
-            'face_recognition': get_face_recognition() is not None,
-            'cv2': get_cv2() is not None
+            'face_recognition': (_face_recognition is not None) if not check_heavy else (get_face_recognition() is not None),
+            'cv2': (_cv2 is not None) if not check_heavy else (get_cv2() is not None)
         }
     }
 
@@ -230,24 +262,23 @@ def api_diag():
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
-    fr = get_face_recognition()
-    cv = get_cv2()
+    # Keep it simple and don't trigger heavy imports
     return jsonify({
         'status': 'healthy',
-        'modules': {
-            'face_recognition': fr is not None,
-            'cv2': cv is not None,
+        'modules_loaded': {
+            'face_recognition': _face_recognition is not None,
+            'cv2': _cv2 is not None,
             'sqlite3': True
         },
         'environment': {
-            'is_vercel': IS_VERCEL,
-            'data_dir': DATA_DIR
+            'is_vercel': is_vercel(),
+            'data_dir': get_data_dir()
         }
     }), 200
 
 @app.route('/uploads/<path:filename>')
 def serve_uploads(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    return send_from_directory(get_upload_folder(), filename)
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -340,7 +371,7 @@ def api_enroll():
         return jsonify({'message': 'No image captured'}), 400
 
     filename = f"{uuid.uuid4()}_{image_file.filename}"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    filepath = os.path.join(get_upload_folder(), filename)
     image_file.save(filepath)
 
     fr = get_face_recognition()
@@ -380,6 +411,7 @@ def api_enroll():
 def api_recognize():
     fr = get_face_recognition()
     cv = get_cv2()
+    np = get_numpy()
     if fr is None or cv is None:
         return jsonify({'message': 'Biometric modules not available on this server'}), 503
 

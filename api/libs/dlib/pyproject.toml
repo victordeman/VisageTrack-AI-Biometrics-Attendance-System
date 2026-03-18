@@ -4,6 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dlib"
-version = "19.24.99"
+version = "19.24.6.99"
 description = "Shim for dlib-bin"
-dependencies = ["dlib-bin==20.0.0"]
+dependencies = ["dlib-bin==19.24.6"]

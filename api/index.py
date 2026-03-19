@@ -172,16 +172,16 @@ def init_db():
                     c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
 
             # Add default admin
-            c.execute("SELECT * FROM users WHERE email = ?", ('admin@ex.com',))
+            c.execute("SELECT * FROM users WHERE email = ?", ('victor@ex.com',))
             if not c.fetchone():
                 c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-                        ('Admin', 'admin@ex.com', generate_password_hash('pass123'), 'admin'))
+                        ('Victor', 'victor@ex.com', generate_password_hash('victor@2026'), 'admin'))
 
-            # Add default employee
-            c.execute("SELECT * FROM users WHERE email = ?", ('employee@ex.com',))
+            # Add default stuntmen
+            c.execute("SELECT * FROM users WHERE email = ?", ('mark@ex.com',))
             if not c.fetchone():
                 c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-                        ('Employee', 'employee@ex.com', generate_password_hash('pass123'), 'employee'))
+                        ('Mark', 'mark@ex.com', generate_password_hash('mark@2026'), 'employee'))
 
             conn.commit()
             logger.info("Database initialized successfully.")

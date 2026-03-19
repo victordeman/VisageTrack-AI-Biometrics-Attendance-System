@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
 Name: dlib
-Version: 19.24.99
+Version: 19.24.6.99
 Summary: Shim for dlib-bin
-Requires-Dist: dlib-bin==20.0.0
+Requires-Dist: dlib-bin==19.24.6

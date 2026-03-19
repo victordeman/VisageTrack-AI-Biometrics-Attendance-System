@@ -1,7 +1,7 @@
 flask==3.0.0
 flask-jwt-extended==4.5.3
 flask-cors==5.0.0
-./libs/dlib
+libs/dlib
 dlib-bin==19.24.6
 face_recognition==1.3.0
 opencv-python-headless==4.9.0.80

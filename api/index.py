@@ -95,6 +95,7 @@ def is_vercel():
 def get_data_dir():
     if is_vercel():
         return '/tmp'
+    # Use the absolute path to the project root for local development
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_upload_folder():
@@ -227,6 +228,18 @@ def handle_error(e):
     return jsonify({'message': 'An internal error occurred', 'error': str(e)}), 500
 
 # ====================== API ROUTES ======================
+
+@app.route('/')
+def api_root():
+    return jsonify({
+        'message': 'VisageTrack AI API',
+        'status': 'online',
+        'version': '1.0.0'
+    }), 200
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
 
 @app.route('/api/ping', methods=['GET'])
 def api_ping():

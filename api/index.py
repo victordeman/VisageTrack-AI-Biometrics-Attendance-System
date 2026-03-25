@@ -2,6 +2,11 @@ from flask import Flask, request, jsonify, session, send_from_directory
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 from flask_cors import CORS
 import sqlite3
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
 import os
 import functools
 import logging
@@ -106,12 +111,30 @@ def get_db_path():
 
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(get_db_path())
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+    db_url = os.environ.get('DIRECT_URL') or os.environ.get('DATABASE_URL')
+
+    if db_url and psycopg2:
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        # Configure cursor to return dict-like rows by default
+        conn.cursor_factory = RealDictCursor
+        try:
+            yield conn
+        finally:
+            conn.close()
+    else:
+        conn = sqlite3.connect(get_db_path())
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+def is_postgres(conn):
+    return hasattr(conn, 'get_dsn_parameters')
+
+def get_ph(conn):
+    return "%s" if is_postgres(conn) else "?"
 
 def init_db():
     db_path = get_db_path()
@@ -132,14 +155,20 @@ def init_db():
 
     try:
         with get_db() as conn:
-            c = conn.cursor()
-            c.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            name TEXT, 
-            email TEXT UNIQUE, 
-            password TEXT, 
-            role TEXT, 
-                    embedding BLOB,
+            is_pg = is_postgres(conn)
+            # Use DictCursor for PG to match sqlite3.Row behavior
+            c = conn.cursor(cursor_factory=RealDictCursor) if is_pg else conn.cursor()
+
+            id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+            embed_type = "BYTEA" if is_pg else "BLOB"
+            c.execute(f'''CREATE TABLE IF NOT EXISTS users (
+                    id {id_type},
+                    name TEXT,
+                    email TEXT UNIQUE,
+                    password TEXT,
+                    role TEXT,
+                    embedding {embed_type},
                     image_path TEXT,
                     first_name TEXT,
                     last_name TEXT,
@@ -148,16 +177,22 @@ def init_db():
                     department TEXT,
                     job_designation TEXT
                 )''')
-            c.execute('''CREATE TABLE IF NOT EXISTS attendance (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            att_id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+            c.execute(f'''CREATE TABLE IF NOT EXISTS attendance (
+                    id {att_id_type},
                     user_id INTEGER,
                     timestamp TEXT,
                     status TEXT
                 )''')
 
             # Check if new columns exist
-            c.execute("PRAGMA table_info(users)")
-            columns = [column[1] for column in c.fetchall()]
+            if is_pg:
+                c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+                columns = [row['column_name'] for row in c.fetchall()]
+            else:
+                c.execute("PRAGMA table_info(users)")
+                columns = [column[1] for column in c.fetchall()]
             cols_to_add = {
                 'image_path': 'TEXT',
                 'first_name': 'TEXT',
@@ -171,19 +206,23 @@ def init_db():
                 if col not in columns:
                     c.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
 
-            # Add default admin
-            c.execute("SELECT * FROM users WHERE email = ?", ('victor@ex.com',))
-            if not c.fetchone():
-                c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-                        ('Victor', 'victor@ex.com', generate_password_hash('victor@2026'), 'admin'))
+            # Seeding with placeholders based on DB type
+            ph = "%s" if is_pg else "?"
 
-            # Add default stuntmen
-            c.execute("SELECT * FROM users WHERE email = ?", ('mark@ex.com',))
+            # Add default admin (Victor)
+            c.execute(f"SELECT * FROM users WHERE email = {ph}", ('victor',))
             if not c.fetchone():
-                c.execute("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-                        ('Mark', 'mark@ex.com', generate_password_hash('mark@2026'), 'employee'))
+                c.execute(f"INSERT INTO users (name, email, password, role) VALUES ({ph}, {ph}, {ph}, {ph})",
+                        ('Victor', 'victor', generate_password_hash('victor@2026'), 'admin'))
 
-            conn.commit()
+            # Add default student (Mark)
+            c.execute(f"SELECT * FROM users WHERE email = {ph}", ('mark',))
+            if not c.fetchone():
+                c.execute(f"INSERT INTO users (name, email, password, role) VALUES ({ph}, {ph}, {ph}, {ph})",
+                        ('Mark', 'mark', generate_password_hash('mark@2026'), 'student'))
+
+            if not is_pg:
+                conn.commit()
             logger.info("Database initialized successfully.")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
@@ -309,8 +348,9 @@ def api_login():
         return jsonify({'message': 'Email and password required'}), 400
 
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT id, role, password FROM users WHERE email = ?", (email,))
+        c.execute(f"SELECT id, role, password FROM users WHERE email = {ph}", (email,))
         user = c.fetchone()
 
     if user and check_password_hash(user['password'], password):
@@ -328,8 +368,9 @@ def api_login():
 def api_user_profile():
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT id, name, email, role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT id, name, email, role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         if not user:
             return jsonify({'message': 'User not found'}), 404
@@ -341,8 +382,9 @@ def api_user_stats():
     user_id = get_jwt_identity()
     # Simple mock stats for the dashboard
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as count FROM attendance WHERE user_id = ?", (user_id,))
+        c.execute(f"SELECT COUNT(*) as count FROM attendance WHERE user_id = {ph}", (user_id,))
         present_count = c.fetchone()['count']
         return jsonify({
             'present': present_count,
@@ -371,8 +413,9 @@ def api_enroll():
             return jsonify({'message': 'Authentication required to create admin accounts'}), 401
         
         with get_db() as conn:
+            ph = get_ph(conn)
             c = conn.cursor()
-            c.execute("SELECT role FROM users WHERE id = ?", (current_user_id,))
+            c.execute(f"SELECT role FROM users WHERE id = {ph}", (current_user_id,))
             user = c.fetchone()
             if not user or user['role'] != 'admin':
                 return jsonify({'message': 'Only administrators can create other admin accounts'}), 403
@@ -406,18 +449,22 @@ def api_enroll():
         return jsonify({'message': 'Error processing face image'}), 500
 
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
         try:
             role = 'admin' if is_admin else 'employee'
-            c.execute("""INSERT INTO users 
+            c.execute(f"""INSERT INTO users
                 (name, email, embedding, image_path, role, password, first_name, last_name, home_address, dob, department, job_designation) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                       (name, email, encrypted_embedding, filename, role, generate_password_hash(password),
                        first_name, last_name, home_address, dob, department, job_designation))
-            conn.commit()
+            if not is_postgres(conn):
+                conn.commit()
             return jsonify({'message': 'Enrollment successful', 'image': filename}), 200
-        except sqlite3.IntegrityError:
-            return jsonify({'message': 'Email already enrolled'}), 400
+        except (sqlite3.IntegrityError, Exception) as e:
+            if "UNIQUE constraint failed" in str(e) or "duplicate key value" in str(e):
+                return jsonify({'message': 'Email already enrolled'}), 400
+            raise e
 
 @app.route('/api/recognize', methods=['POST'])
 @jwt_required()
@@ -447,6 +494,8 @@ def api_recognize():
     new_embedding = fr.face_encodings(rgb, locations)[0]
 
     with get_db() as conn:
+        ph = get_ph(conn)
+        is_pg = is_postgres(conn)
         c = conn.cursor()
         c.execute("SELECT id, embedding FROM users WHERE embedding IS NOT NULL")
         users = c.fetchall()
@@ -456,8 +505,10 @@ def api_recognize():
                 stored = decode_embedding(user['embedding'])
                 distance = fr.face_distance([stored], new_embedding)[0]
                 if distance < 0.6:
-                    c.execute("INSERT INTO attendance (user_id, timestamp, status) VALUES (?, datetime('now'), 'present')", (user['id'],))
-                    conn.commit()
+                    ts_func = "CURRENT_TIMESTAMP" if is_pg else "datetime('now')"
+                    c.execute(f"INSERT INTO attendance (user_id, timestamp, status) VALUES ({ph}, {ts_func}, 'present')", (user['id'],))
+                    if not is_pg:
+                        conn.commit()
                     return jsonify({'message': 'Attendance recorded', 'user_id': user['id']}), 200
             except Exception as e:
                 logger.error(f"Error matching face: {e}")
@@ -469,8 +520,9 @@ def api_recognize():
 def api_admin_stats():
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         if not user or user['role'] != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
@@ -492,8 +544,9 @@ def api_admin_stats():
 def api_admin_attendance():
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT id, role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT id, role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         
         if not user:
@@ -502,7 +555,7 @@ def api_admin_attendance():
         if user['role'] == 'admin':
             c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id ORDER BY a.timestamp DESC")
         else:
-            c.execute("SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = ? ORDER BY a.timestamp DESC", (user['id'],))
+            c.execute(f"SELECT a.id, u.name, a.timestamp, a.status FROM attendance a JOIN users u ON a.user_id = u.id WHERE u.id = {ph} ORDER BY a.timestamp DESC", (user['id'],))
         
         logs = [dict(row) for row in c.fetchall()]
         
@@ -513,8 +566,9 @@ def api_admin_attendance():
 def api_admin_users():
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
         c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         if not user or user['role'] != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
@@ -528,15 +582,18 @@ def api_admin_users():
 def api_admin_delete_user(target_user_id):
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
+        is_pg = is_postgres(conn)
         c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         if not user or user['role'] != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
 
-        c.execute("DELETE FROM attendance WHERE user_id = ?", (target_user_id,))
-        c.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
-        conn.commit()
+        c.execute(f"DELETE FROM attendance WHERE user_id = {ph}", (target_user_id,))
+        c.execute(f"DELETE FROM users WHERE id = {ph}", (target_user_id,))
+        if not is_pg:
+            conn.commit()
     return jsonify({'message': f'User {target_user_id} and their records deleted'}), 200
 
 @app.route('/api/admin/attendance/<int:log_id>', methods=['DELETE'])
@@ -544,14 +601,17 @@ def api_admin_delete_user(target_user_id):
 def api_admin_delete_log(log_id):
     user_id = get_jwt_identity()
     with get_db() as conn:
+        ph = get_ph(conn)
+        is_pg = is_postgres(conn)
         c = conn.cursor()
-        c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
         user = c.fetchone()
         if not user or user['role'] != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
 
-        c.execute("DELETE FROM attendance WHERE id = ?", (log_id,))
-        conn.commit()
+        c.execute(f"DELETE FROM attendance WHERE id = {ph}", (log_id,))
+        if not is_pg:
+            conn.commit()
     return jsonify({'message': f'Attendance log {log_id} deleted'}), 200
 
 if __name__ == '__main__':

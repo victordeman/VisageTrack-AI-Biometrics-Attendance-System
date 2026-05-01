@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as faceapi from '@vladmandic/face-api';
+import type * as faceapiType from '@vladmandic/face-api';
 import Webcam from 'react-webcam';
 import { Camera, RefreshCw, CheckCircle2, ZoomIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ interface FaceScannerProps {
 export function FaceScanner({ onCapture, mode, isActive, matchResult }: FaceScannerProps) {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const faceapiRef = useRef<typeof faceapiType | null>(null);
   const [isModelsLoaded, setIsModelsLoaded] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -21,6 +22,8 @@ export function FaceScanner({ onCapture, mode, isActive, matchResult }: FaceScan
   useEffect(() => {
     const loadModels = async () => {
       try {
+        const faceapi = await import('@vladmandic/face-api');
+        faceapiRef.current = faceapi;
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
@@ -36,8 +39,9 @@ export function FaceScanner({ onCapture, mode, isActive, matchResult }: FaceScan
   }, []);
 
   useEffect(() => {
-    if (!isModelsLoaded || !isActive || (mode === 'enroll' && capturedImage)) return;
+    if (!isModelsLoaded || !isActive || (mode === 'enroll' && capturedImage) || !faceapiRef.current) return;
 
+    const faceapi = faceapiRef.current;
     let scanInterval: number;
 
     const scanFace = async () => {
